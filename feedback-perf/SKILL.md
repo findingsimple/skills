@@ -1,5 +1,5 @@
 ---
-name: feedback
+name: feedback-perf
 description: Capture and manage performance review feedback in Obsidian vault
 disable-model-invocation: true
 argument-hint: "capture <name>: <feedback> | capture [mid|eoy] <name>: <feedback>"
