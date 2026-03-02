@@ -17,21 +17,19 @@ Capture performance feedback for team members into their review cycle documents 
 
 ## Instructions
 
-### Step 0 — Resolve vault path
+### Step 0 — Resolve paths
 
-Use the first non-empty source found:
-
-1. `$OBSIDIAN_VAULT_PATH` from `~/.obsidian_env`
-
-To load it:
+Load environment variables:
 ```bash
 source ~/.obsidian_env
-echo "$OBSIDIAN_VAULT_PATH"
+echo "$OBSIDIAN_TEAMS_PATH"
 ```
 
-If not set, stop and tell the user to add `export OBSIDIAN_VAULT_PATH=/path/to/vault` to `~/.obsidian_env`.
+The **teams base path** is `$OBSIDIAN_TEAMS_PATH` — the directory containing team/person subdirectories.
 
-Verify the resolved path exists with `ls`. The **teams base path** is `{vault_path}/HappyCo/Teams`.
+If not set, stop and tell the user to add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.obsidian_env`.
+
+Verify the resolved path exists with `ls`.
 
 ### Step 1 — Discover team members
 
@@ -114,7 +112,7 @@ Read the file. If it doesn't exist, create it with the appropriate template:
 **Mid Year template:**
 ```
 ==Living document for capturing feedback for upcoming {year} Mid Review Cycle for {Full Name}==
-## What should this person keep doing that contributes to the success of HappyCo?
+## What should this person keep doing that contributes to the success of the company?
 
 xxx
 
@@ -130,11 +128,11 @@ xxx
 **EOY template:**
 ```
 ==Living document for capturing feedback for upcoming {year} EOY Review Cycle for {Full Name}==
-## What are the most significant accomplishments this HappyCo'er has demonstrated this year?
+## What are the most significant accomplishments this person has demonstrated this year?
 
 xxx
 
-## What areas for growth and improvement do you recommend for this HappyCo'er?
+## What areas for growth and improvement do you recommend for this person?
 
 xxx
 ```

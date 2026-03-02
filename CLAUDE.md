@@ -34,5 +34,5 @@ Each skill lives in its own directory with a `SKILL.md` file:
 
 | File | Contents |
 |------|----------|
-| `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH` — shared by all vault-related skills |
+| `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH` — shared by all vault-related skills |
 | `~/.bonusly_env` | `BONUSLY_API_TOKEN` |

@@ -25,22 +25,22 @@ Examples:
 - `/bonusly-sync --dry-run /path/to/vault` — dry run with custom vault
 - `/bonusly-sync /path/to/vault` — normal run with custom vault
 
-### Step 1 — Resolve vault path
+### Step 1 — Resolve paths
 
-Use the first non-empty source found:
-
-1. Vault path from `$ARGUMENTS` (after removing `--dry-run` if present)
-2. `$OBSIDIAN_VAULT_PATH` from `~/.obsidian_env`
-
-To load it:
+Load environment variables:
 ```bash
 source ~/.obsidian_env
-echo "$OBSIDIAN_VAULT_PATH"
+echo "$OBSIDIAN_TEAMS_PATH"
 ```
 
-If neither is set, stop and tell the user to either pass a vault path as an argument (`/bonusly-sync /path/to/vault`) or add `export OBSIDIAN_VAULT_PATH=/path/to/vault` to `~/.obsidian_env`.
+The **teams base path** is determined by the first non-empty source:
 
-Verify the resolved vault path exists with `ls`. If it doesn't exist, stop and tell the user.
+1. Path from `$ARGUMENTS` (after removing `--dry-run` if present) — treated as the teams directory
+2. `$OBSIDIAN_TEAMS_PATH` from `~/.obsidian_env`
+
+If neither is set, stop and tell the user to either pass a path as an argument (`/bonusly-sync /path/to/teams`) or add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.obsidian_env`.
+
+Verify the resolved path exists with `ls`. If it doesn't exist, stop and tell the user.
 
 ### Step 2 — Load API token
 
@@ -74,10 +74,10 @@ Capture the four output lines as: `START_TIME`, `END_TIME`, `PERIOD` (e.g. `2026
 
 ### Step 4 — Discover people
 
-Scan the vault for person notes with an `email` field in their YAML frontmatter. Use Glob to find all markdown files under `{vault}/HappyCo/Teams/`:
+Scan the teams directory for person notes with an `email` field in their YAML frontmatter. Use Glob to find all markdown files:
 
 ```
-{vault}/HappyCo/Teams/**/*.md
+{teams_base}/**/*.md
 ```
 
 For each file found, use Read to check the first 20 lines for YAML frontmatter containing an `email:` field. Extract:
@@ -168,7 +168,7 @@ generated_at: "{CURRENT_ISO_TIMESTAMP}"
 
 ### Step 7 — Write sync log
 
-Write a summary log file to `{vault}/HappyCo/Teams/Logs/Bonusly Sync - {PERIOD}.md`. Create the `Logs/` directory with `mkdir -p` if it doesn't exist.
+Write a summary log file to `{teams_base}/Logs/Bonusly Sync - {PERIOD}.md`. Create the `Logs/` directory with `mkdir -p` if it doesn't exist.
 
 **File format:**
 
