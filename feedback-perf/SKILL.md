@@ -3,7 +3,7 @@ name: feedback-perf
 description: Capture and manage performance review feedback in Obsidian vault
 disable-model-invocation: true
 argument-hint: "capture <name>: <feedback> | capture [mid|eoy] <name>: <feedback>"
-allowed-tools: Read Edit Write Glob Bash
+allowed-tools: Read Edit Write Glob Bash Agent
 ---
 
 # Performance Review Feedback
@@ -13,6 +13,7 @@ Capture performance feedback for team members into their review cycle documents 
 ## Subcommands
 
 - **capture** — Append a dated feedback note to a team member's review cycle document
+- **synthesize** — *(planned)* Distill captured feedback and Bonusly data into polished review answers using an Opus agent
 
 ## Instructions
 
@@ -41,13 +42,13 @@ Scan the vault for person profile notes. Use Glob to find markdown files:
 ```
 
 A valid profile file must:
-- Have YAML frontmatter with a `team` field
-- Have a non-empty `team` value that is a **single team name** (e.g., `"ACE"` or `"COPS"` — skip comma-separated values like `"ACE, COPS"`)
-- Not be inside a `Feedback/`, `1:1s/`, or `Logs/` subdirectory
+- Have YAML frontmatter (delimited by `---`)
+- Not be inside a `Feedback/`, `1:1s/`, `Logs/`, or `Me/` subdirectory
+- Have a `team` value that is either empty or a **single team name** (e.g., `"ACE"` or `"COPS"` — skip comma-separated values like `"ACE, COPS"` which indicate a manager, not a team member)
 
 For each valid profile file, extract:
 - **name**: the parent directory name (the person's full name)
-- **team**: the `team` frontmatter value
+- **team**: the `team` frontmatter value (may be empty for cross-functional colleagues)
 - **person_dir**: the full path to the person's directory
 
 Read only the first 15 lines of each candidate file to check frontmatter. Build a list of people: `[ { name, team, person_dir }, ... ]`
@@ -62,16 +63,16 @@ Read only the first 15 lines of each candidate file to check frontmatter. Build 
 
 **Usage:**
 ```
-/feedback capture <name>: <feedback>
-/feedback capture mid <name>: <feedback>
-/feedback capture eoy <name>: <feedback>
+/feedback-perf capture <name>: <feedback>
+/feedback-perf capture mid <name>: <feedback>
+/feedback-perf capture eoy <name>: <feedback>
 ```
 
 **Examples:**
 ```
-/feedback capture Alex: Great cross-team collaboration on auto-assign
-/feedback capture eoy Jordan: Led the migration to the new auth system
-/feedback capture mid Sam: Improved deploy pipeline reliability significantly
+/feedback-perf capture Alex: Great cross-team collaboration on auto-assign
+/feedback-perf capture eoy Jordan: Led the migration to the new auth system
+/feedback-perf capture mid Sam: Improved deploy pipeline reliability significantly
 ```
 
 Follow these steps exactly:
@@ -166,3 +167,18 @@ Captured feedback for {Full Name} → {cycle_type} review ({year})
 ```
 
 Where `{cycle_type}` is "Mid Year" or "EOY".
+
+---
+
+### Subcommand: `synthesize` *(planned)*
+
+**Usage:**
+```
+/feedback-perf synthesize <name>
+/feedback-perf synthesize mid <name>
+/feedback-perf synthesize eoy <name>
+```
+
+Will gather all inputs for a person (captured feedback, Bonusly recognition, person profile) and spawn an **Opus agent** to draft polished answers for each review question. The agent output will be written into the review cycle document, replacing placeholder content.
+
+**Not yet implemented.**
