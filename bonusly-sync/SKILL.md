@@ -30,9 +30,15 @@ Examples:
 Use the first non-empty source found:
 
 1. Vault path from `$ARGUMENTS` (after removing `--dry-run` if present)
-2. `$OBSIDIAN_VAULT_PATH` from `~/.bonusly_env` (loaded in Step 2)
+2. `$OBSIDIAN_VAULT_PATH` from `~/.obsidian_env`
 
-If neither is set, stop and tell the user to either pass a vault path as an argument (`/bonusly-sync /path/to/vault`) or add `export OBSIDIAN_VAULT_PATH=/path/to/vault` to `~/.bonusly_env`.
+To load it:
+```bash
+source ~/.obsidian_env
+echo "$OBSIDIAN_VAULT_PATH"
+```
+
+If neither is set, stop and tell the user to either pass a vault path as an argument (`/bonusly-sync /path/to/vault`) or add `export OBSIDIAN_VAULT_PATH=/path/to/vault` to `~/.obsidian_env`.
 
 Verify the resolved vault path exists with `ls`. If it doesn't exist, stop and tell the user.
 
@@ -45,8 +51,6 @@ echo "$BONUSLY_API_TOKEN" | head -c 8
 ```
 
 Confirm that `BONUSLY_API_TOKEN` is set (the echo should print something). If it's empty, stop and tell the user to create `~/.bonusly_env` with `export BONUSLY_API_TOKEN=your_token`.
-
-This file may also contain `OBSIDIAN_VAULT_PATH` — used in Step 1 for vault path resolution.
 
 ### Step 3 — Calculate date range
 
