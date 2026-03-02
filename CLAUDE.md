@@ -18,6 +18,8 @@ Each skill lives in its own directory with a `SKILL.md` file:
 ~/.claude/skills/
   bonusly-sync/
     SKILL.md          # Skill definition (frontmatter + prompt)
+  feedback-perf/
+    SKILL.md
 ```
 
 ## Conventions
