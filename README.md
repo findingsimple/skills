@@ -11,7 +11,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | Skill | Command | Description |
 |-------|---------|-------------|
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
-| [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture performance review feedback into Obsidian vault |
+| [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 
 ## Setup
 
@@ -20,7 +20,8 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 Create `~/.obsidian_env` (shared by all vault-related skills):
 
 ```bash
-export OBSIDIAN_TEAMS_PATH="/path/to/your/vault/Teams"
+export OBSIDIAN_VAULT_PATH="/path/to/your/vault"
+export OBSIDIAN_TEAMS_PATH="$OBSIDIAN_VAULT_PATH/Teams"
 ```
 
 Create `~/.bonusly_env` (for bonusly-sync only):
@@ -63,12 +64,19 @@ Pulls the previous month's Bonusly recognition (given and received) for tracked 
 
 ### feedback-perf
 
-Capture dated performance feedback for team members into their review cycle documents.
+Capture dated performance feedback throughout the review period, then synthesize it into draft review responses using an Opus agent.
 
+**Capture** — append a dated note to a team member's review cycle document:
 ```bash
 /feedback-perf capture Alex: Great cross-team collaboration on the project
 /feedback-perf capture eoy Jordan: Led the migration to the new auth system
 /feedback-perf capture mid Sam: Improved deploy pipeline reliability
+```
+
+**Synthesize** — distill captured feedback and Bonusly data into draft review answers:
+```bash
+/feedback-perf synthesize Alex
+/feedback-perf synthesize eoy Jordan
 ```
 
 **Prerequisites:**
