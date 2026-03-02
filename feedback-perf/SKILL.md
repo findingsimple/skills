@@ -13,7 +13,7 @@ Capture performance feedback for team members into their review cycle documents 
 ## Subcommands
 
 - **capture** — Append a dated feedback note to a team member's review cycle document
-- **synthesize** — *(planned)* Distill captured feedback and Bonusly data into polished review answers using an Opus agent
+- **synthesize** — Distill captured feedback and Bonusly data into polished review answers using the Performance Reviewer agent (Opus)
 
 ## Instructions
 
@@ -168,7 +168,7 @@ Where `{cycle_type}` is "Mid Year" or "EOY".
 
 ---
 
-### Subcommand: `synthesize` *(planned)*
+### Subcommand: `synthesize`
 
 **Usage:**
 ```
@@ -177,6 +177,69 @@ Where `{cycle_type}` is "Mid Year" or "EOY".
 /feedback-perf synthesize eoy <name>
 ```
 
-Will gather all inputs for a person (captured feedback, Bonusly recognition, person profile) and spawn an **Opus agent** to draft polished answers for each review question. The agent output will be written into the review cycle document, replacing placeholder content.
+Follow these steps exactly:
 
-**Not yet implemented.**
+#### Step 2 — Parse arguments
+
+Parse `$ARGUMENTS` to extract:
+
+1. **Subcommand** — must be `synthesize`. If missing or unrecognized, show usage help and stop.
+2. **Cycle override** (optional) — `mid` or `eoy` immediately after `synthesize`. If absent, determine from current month:
+   - Jan–Jun → `mid` (Mid Year Review Cycle)
+   - Jul–Dec → `eoy` (EOY Review Cycle)
+3. **Name** — everything after the subcommand (and optional cycle). Trim whitespace.
+
+If name is missing, show usage help and stop.
+
+#### Step 3 — Match team member
+
+Same matching logic as the `capture` subcommand (case-insensitive, first name, partial, full name).
+
+#### Step 4 — Gather all inputs
+
+Collect the following files for the matched person. Read each one that exists:
+
+1. **Person profile** — `{person_dir}/{Full Name}.md`
+2. **Target review cycle document** — based on cycle type and year (same path resolution as `capture`)
+3. **Bonusly recognition files** — all `{person_dir}/Feedback/Bonusly - *.md` files for the current year
+4. **Prior review packets** — all files in `{person_dir}/Feedback/*/Review Packet - *.md`
+
+If the target review cycle document has no `## Captured Feedback` section or it's empty (no bullet points), warn the manager that there's no captured feedback to synthesize and ask if they want to proceed with only Bonusly and prior review data.
+
+#### Step 5 — Spawn the Performance Reviewer agent
+
+Use the Agent tool to spawn the `performance-reviewer` agent with the following prompt. Include the full content of every file gathered in Step 4 in the prompt — the agent runs in a forked context and has no access to the conversation history.
+
+```
+You are synthesizing a {cycle_type} performance review for {Full Name} ({team} team).
+
+## Review Cycle
+{cycle_type}: {Mid Year | EOY}
+Year: {year}
+
+## Person Profile
+{contents of profile .md}
+
+## Review Cycle Document (target — write responses for each question)
+{contents of review cycle .md}
+
+## Bonusly Peer Recognition
+{contents of all Bonusly files, or "No Bonusly data available for this period."}
+
+## Prior Review Packets
+{contents of prior review packets, or "No prior review packets available."}
+
+---
+
+Synthesize the captured feedback, peer recognition, and prior context into draft responses for each review question in the review cycle document. Follow your output format exactly.
+```
+
+#### Step 6 — Present results
+
+Display the agent's output directly to the manager. Do NOT automatically write it into the review cycle document.
+
+Ask the manager:
+- "Would you like me to write these draft responses into the review document?"
+- "Would you like to adjust anything first?"
+
+Only write to the document if the manager confirms. When writing, replace the placeholder content (`xxx`/`xxxx`) under each question heading with the draft responses, but **preserve the `## Captured Feedback` section unchanged**.
