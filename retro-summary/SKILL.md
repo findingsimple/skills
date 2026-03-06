@@ -36,9 +36,11 @@ Examples:
 
 ### Step 1 — Load environment
 
-Load environment variables:
+Load environment variables (note: values may contain `$HOME` which needs expansion):
 ```bash
 source ~/.obsidian_env
+OBSIDIAN_VAULT_PATH=$(eval echo "$OBSIDIAN_VAULT_PATH")
+OBSIDIAN_TEAMS_PATH=$(eval echo "$OBSIDIAN_TEAMS_PATH")
 echo "VAULT: $OBSIDIAN_VAULT_PATH"
 echo "TEAMS: $OBSIDIAN_TEAMS_PATH"
 ```
@@ -83,6 +85,7 @@ Verify the resolved team directory exists at `{OBSIDIAN_TEAMS_PATH}/{team_name}/
 
 **If the URL points to the full board (node `0:1` or no node-id):**
 - List all available retro sections with their dates.
+- Check the vault for existing retro files (`Retro - {YYYY-MM-DD}.md`) and mark already-processed sections with a checkmark in the listing.
 - Use `AskUserQuestion` to let the user pick which retro to summarize. Present the section dates as options (up to 4 most recent; include "Other" for older ones).
 - After selection, re-fetch the specific section by calling `mcp__figma__get_figjam` with the selected section's node ID for cleaner data.
 
@@ -99,17 +102,25 @@ Parse the section data to extract all sticky notes:
 3. **Extract stickies** — For each `<sticky>` element, extract:
    - `id` — the sticky's node ID
    - `x` — the sticky's x-coordinate position
+   - `color` — the color attribute (e.g., `STICKY_RED`, `STICKY_GREEN`, `CUSTOM`)
    - `author` — the author attribute (contributor name)
    - `text` — the text content of the sticky
 
-4. **Filter** — Remove stickies with empty or whitespace-only text content.
+4. **Filter** — Remove stickies that:
+   - Have empty or whitespace-only text content
+   - Have node ID prefixes significantly lower than the section's own node ID prefix (these are stale stickies carried over from a previous retro). For example, if the section node is `281:2986`, stickies with prefixes like `191:xxx` or `205:xxx` are likely leftovers — exclude them.
 
-5. **Categorize** — Assign each sticky to a category based on its x-coordinate:
-   - x < Rose/Thorn boundary → **Rose**
-   - x < Thorn/Bud boundary → **Thorn**
-   - x >= Thorn/Bud boundary → **Bud**
+5. **Categorize** — Use sticky color as the **primary** indicator, with nearest-header proximity as a fallback:
+   - `STICKY_RED` → **Rose** (regardless of x-position)
+   - `STICKY_GREEN` → **Bud** (regardless of x-position)
+   - `CUSTOM` (default/blue) or any other color → Assign to the **nearest column header** by comparing the absolute distance between the sticky's x-coordinate and each header's x-coordinate:
+     - Closest to Rose_x → **Rose**
+     - Closest to Thorn_x → **Thorn**
+     - Closest to Bud_x → **Bud**
 
-6. **Count votes** — Look for `<stamp>` elements and reaction `<instance>` elements near each sticky (within ~150px proximity based on position). Record the vote count per sticky.
+   **Why nearest-header instead of midpoints:** Rose stickies consistently extend well past the Rose/Thorn midpoint because the Rose column is wide. Using nearest-header naturally handles this — a sticky at x=1100 with headers at Rose=336, Thorn=1580, Bud=2826 correctly maps to Thorn (distance 480) rather than Rose (distance 764).
+
+6. **Count votes** — Look for `<stamp>` elements and `<instance>` elements (excluding decorative FigPal characters unless they appear within ~200px of a specific sticky) near each sticky (within ~200px proximity based on position). **Deduplicate by type**: if the same stamp/instance type appears multiple times near a sticky (e.g., 3 "Thumbs up"), count it as **1 vote**. Each unique reaction type counts as 1 vote. Record the total unique vote count per sticky.
 
 ### Step 5 — Present extracted data
 
@@ -135,7 +146,9 @@ Participants: {comma-separated list of unique authors}
 
 Where `{vote_indicator}` is shown only for stickies with votes, formatted as `(N votes)`.
 
-Ask the user for confirmation before proceeding to synthesis: "Proceed with AI synthesis?"
+Ask the user: "Does the categorization look correct? If counts need adjusting, tell me. Otherwise I'll proceed with synthesis and write to vault."
+
+If the user provides corrected counts or moves specific stickies, adjust accordingly and re-display the corrected summary before proceeding.
 
 ### Step 6 — AI synthesis
 
@@ -183,7 +196,7 @@ Focus on items that are specific and assignable. Aim for 3-7 action items.
 Return ONLY the markdown content for these five sections (Key Themes through Action Items), with no preamble or explanation.
 ```
 
-Present the agent's synthesis to the user for review. Ask: "Write this retro summary to the vault?" (Skip this confirmation in dry-run mode — just proceed to output.)
+After synthesis completes, proceed directly to writing the file (the user already confirmed in Step 5). In `--dry-run` mode, print the output instead of writing.
 
 ### Step 7 — Write to vault
 
@@ -229,7 +242,7 @@ participants: [{author1}, {author2}, ...]
 
 {Key Themes section from agent synthesis}
 
-## Action Items
+## Possible Action Items
 
 {Action Items checklist from agent synthesis}
 
