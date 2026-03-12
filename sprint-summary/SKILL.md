@@ -12,10 +12,11 @@ Pull Jira sprint data for your teams, optionally gather goals/highlights/blocker
 
 ## Architecture Note
 
-This skill uses **two data sources**:
+This skill uses **up to three data sources**:
 
 1. **Jira Agile REST API** (via `curl` in a `bash -c` subshell) — for sprint metadata: board discovery, sprint listing, sprint goals, and sprint dates. The Atlassian MCP tools do not expose these endpoints.
 2. **Atlassian MCP tools** (`searchJiraIssuesUsingJql`) — for querying issues within a sprint. Story points (`customfield_10021`) are returned correctly via MCP.
+3. **GitLab REST API** (via `curl`, optional) — for merge request metrics. Requires `GITLAB_TOKEN` and `GITLAB_PROJECT_ID` in `~/.sprint_summary_env`. If not configured, the Engineering Metrics section is omitted.
 
 **Shell compatibility:** The env file uses `export` syntax. Always use `bash -c 'source ~/.sprint_summary_env && ...'` for curl commands — `source` alone does not work in zsh subshells spawned by the Bash tool.
 
@@ -44,7 +45,7 @@ Dry run: {yes/no}
 
 Load environment variables using a bash subshell to ensure proper export handling:
 ```bash
-bash -c 'source ~/.obsidian_env && source ~/.sprint_summary_env && echo "VAULT: $(eval echo $OBSIDIAN_VAULT_PATH)" && echo "TEAMS: $(eval echo $OBSIDIAN_TEAMS_PATH)" && echo "JIRA: $JIRA_BASE_URL" && echo "SPRINT_TEAMS: $SPRINT_TEAMS" && echo "AUTH: $JIRA_EMAIL"'
+bash -c 'source ~/.obsidian_env && source ~/.sprint_summary_env && echo "VAULT: $(eval echo $OBSIDIAN_VAULT_PATH)" && echo "TEAMS: $(eval echo $OBSIDIAN_TEAMS_PATH)" && echo "JIRA: $JIRA_BASE_URL" && echo "SPRINT_TEAMS: $SPRINT_TEAMS" && echo "AUTH: $JIRA_EMAIL" && echo "GITLAB_URL: ${GITLAB_URL:-not set}" && echo "GITLAB_PROJECT_ID: ${GITLAB_PROJECT_ID:-not set}" && echo "GITLAB_TOKEN: ${GITLAB_TOKEN:+set}"'
 ```
 
 Verify:
@@ -52,7 +53,12 @@ Verify:
 - `JIRA_BASE_URL`, `JIRA_STORY_POINTS_FIELD`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, and `SPRINT_TEAMS` are set. If not, stop and tell the user to configure `~/.sprint_summary_env`.
 - The teams path exists on disk. If not, stop and tell the user.
 
-**Important:** Never echo or display `$JIRA_API_TOKEN`. Only confirm the email is set.
+**Important:** Never echo or display `$JIRA_API_TOKEN` or `$GITLAB_TOKEN`. Only confirm the email is set.
+
+**GitLab config check:**
+- If both `GITLAB_TOKEN` and `GITLAB_PROJECT_ID` are set → confirm "GitLab MR metrics: enabled".
+- If only one is set → warn "GitLab partially configured — both GITLAB_TOKEN and GITLAB_PROJECT_ID are required. Skipping MR metrics."
+- If neither is set → note "GitLab MR metrics: skipped (not configured)" — this is not an error.
 
 ### Step 3 — Resolve teams
 
@@ -212,6 +218,48 @@ Process the results:
    - Story points (or `-` if none)
    - Priority
 
+### Step 5b — Fetch GitLab MR data
+
+**Skip this step entirely** if `GITLAB_TOKEN` or `GITLAB_PROJECT_ID` are not set. Omit the Engineering Metrics section from the output.
+
+Query GitLab for merged MRs within the sprint window, match them to sprint issues via branch names, and calculate metrics.
+
+#### 5b.1 — Fetch merged MRs
+
+Query all merged MRs updated within the sprint window (with 1-day buffer on each side):
+
+```bash
+bash -c 'source ~/.sprint_summary_env && curl -s \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "$GITLAB_URL/api/v4/projects/$GITLAB_PROJECT_ID/merge_requests?state=merged&updated_after={start_date_minus_1}&updated_before={end_date_plus_1}&per_page=100"'
+```
+
+**Paginate** if the response contains 100 items — increment the `page` param (add `&page=2`, `&page=3`, etc.) until fewer than 100 results are returned.
+
+#### 5b.2 — Filter and match MRs
+
+1. **Filter** to MRs where `merged_at` falls within the sprint date range (inclusive).
+2. **Match to sprint issues** — extract issue keys from `source_branch` using a regex built from the configured project keys. For example, with teams ACE and COPS, use: `(ACE|COPS)-\d+`. Only keep MRs whose branch contains a matching issue key that exists in the sprint issue list from Step 5.
+3. MRs without a matching issue key (infra work, etc.) are excluded.
+
+#### 5b.3 — Extract MR details
+
+For each matched MR, extract:
+- `iid`, `title`, `web_url`
+- `author.name`, `source_branch`
+- `created_at`, `merged_at` → calculate time-to-merge in hours
+- `merge_user.name`
+
+#### 5b.4 — Calculate aggregate metrics
+
+- **Total MRs merged** — count of matched MRs
+- **Avg time to merge** — mean of (merged_at - created_at) in hours, 1 decimal place
+- **Median time to merge** — median of same
+- **MRs per person** — count grouped by `author.name`, with per-author avg time to merge
+- **Longest time to merge** — max value with MR title for context
+
+**Time display format:** `"4h"` for <24h, `"2d 4h"` for >=24h.
+
 ### Step 6 — Interactive prompts
 
 Use `AskUserQuestion` to gather optional context. Each question needs at least 2 options.
@@ -246,6 +294,8 @@ end_date: {YYYY-MM-DD}
 points_committed: {N}
 points_completed: {N}
 completion_rate: {N}
+mrs_merged: {N}              # only if GitLab data present
+avg_time_to_merge_hours: {N} # only if GitLab data present
 generated: {YYYY-MM-DDTHH:MM:SSZ}
 source: jira
 ---
@@ -272,6 +322,29 @@ source: jira
 | Type | Completed | Total | Points |
 |------|-----------|-------|--------|
 {For each issue type: | {type} | {completed} | {total} | {points} |}
+
+## Engineering Metrics
+
+{Only include this section if GitLab data is available and matching MRs were found. Omit entirely otherwise.}
+
+| Metric | Value |
+|--------|-------|
+| Merge Requests Merged | {total_mrs} |
+| Avg Time to Merge | {avg_ttm} |
+| Median Time to Merge | {median_ttm} |
+| Longest Time to Merge | {max_ttm} ({mr_title}) |
+
+### MRs by Author
+
+| Author | MRs | Avg Time to Merge |
+|--------|-----|-------------------|
+| {name} | {count} | {avg} |
+
+### Merge Request Details
+
+| MR | Issue | Author | Time to Merge |
+|----|-------|--------|---------------|
+| [!{iid}]({web_url}) | [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {author} | {ttm} |
 
 ## Completed Work
 

@@ -41,6 +41,12 @@ export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your_api_token"
 # Team config — VAULT_DIR|PROJECT_KEY|BOARD_ID|DISPLAY_NAME (comma-separated)
 export SPRINT_TEAMS="TeamA|PROJA|123|Team Alpha,TeamB|PROJB|456|Team Beta"
+
+# GitLab (optional — for MR metrics in sprint summaries)
+# Token needs read_api scope. Project ID is the numeric ID from GitLab.
+export GITLAB_URL="https://gitlab.com"
+export GITLAB_TOKEN="glpat-your-token-here"
+export GITLAB_PROJECT_ID="12345"
 ```
 
 ### Vault structure
@@ -119,7 +125,7 @@ Extract retrospective data from a FigJam board (Rose/Thorn/Bud format), synthesi
 
 ### sprint-summary
 
-Pull Jira sprint data (issues, story points, goals, dates) for configured teams and write structured sprint summary markdown files into the vault.
+Pull Jira sprint data (issues, story points, goals, dates) for configured teams and write structured sprint summary markdown files into the vault. Optionally enriches with GitLab merge request metrics (time to merge, MR counts per author) when GitLab credentials are configured.
 
 ```bash
 /sprint-summary                          # latest completed sprint, all teams
@@ -134,3 +140,4 @@ Pull Jira sprint data (issues, story points, goals, dates) for configured teams 
 - `~/.sprint_summary_env` with Jira credentials and team config (see Setup above)
 - A Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens))
 - Atlassian MCP server connected in Claude Code
+- *(Optional)* GitLab personal access token with `read_api` scope + project ID in `~/.sprint_summary_env` for MR metrics
