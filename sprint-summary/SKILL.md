@@ -72,7 +72,12 @@ For each entry, extract:
 
 If `--team` was specified, filter to only the matching team (match against `vault_dir`, case-insensitive). If no match found, list available teams and stop.
 
-Verify each team's vault directory exists at `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/`. If not, warn but continue with other teams.
+Verify each team's vault directory exists at `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/`. Remove any teams whose directory doesn't exist (warn the user).
+
+If `--team` was **not** specified and there are multiple valid teams remaining, use `AskUserQuestion` to let the user choose which team(s) to generate for:
+- One option per team using the display name (e.g., "ACE — Admin Experience and Configuration")
+- An "All teams" option
+- Use `multiSelect: true` so the user can pick one or more
 
 ### Step 4 — Find board and sprint
 
@@ -225,9 +230,7 @@ for issue in issues:
 
 Process the results:
 
-1. **Separate issues** into two groups:
-   - **Completed** — status category is "Done" (includes statuses: Done, Closed, Resolved, Cancelled)
-   - **Carry-over** — everything else (In Progress, To Do, In Review, On Hold, Open, Planned, Backlog, etc.)
+1. **Classify completion** — an issue is "completed" if its status category is "Done" (includes statuses: Done, Closed, Resolved, Cancelled). All other statuses are incomplete. Do **not** separate into different groups — all issues go into a single list.
 
 2. **Calculate metrics:**
    - **Points committed** — sum of story points for all issues in the sprint (skip issues with no points)
@@ -396,27 +399,12 @@ source: jira
 |----|-------|--------|---------------|
 | [!{iid}]({web_url}) | [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {author} | {ttm} |
 
-## Completed Work
+## Sprint Work
 
-{For each issue type that has completed items, grouped under ### {Issue Type}:}
-
-### {Issue Type}
-
-| Key | Summary | Assignee | Points |
-|-----|---------|----------|--------|
-{For each completed issue of this type:}
-| [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {summary} | {assignee} | {points} |
-
-## Carry-Over
-
-{If carry-over items exist:}
-
-| Key | Summary | Status | Assignee | Points |
-|-----|---------|--------|----------|--------|
-{For each carry-over issue:}
-| [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {summary} | {status} | {assignee} | {points} |
-
-{If no carry-over items: "No carry-over items."}
+| Key | Type | Summary | Status | Assignee | Points |
+|-----|------|---------|--------|----------|--------|
+{For each issue:}
+| [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {issuetype} | {summary} | {status} | {assignee} | {points} |
 
 ## Highlights
 
@@ -435,8 +423,7 @@ source: jira
 - `start_date_display` and `end_date_display` should be human-readable (e.g., "3 Mar 2026")
 - Issue keys should be linked to Jira using `{JIRA_BASE_URL}/browse/{KEY}`
 - Points should show `-` if no story points assigned
-- Sort completed work within each type group by points descending (highest first), then alphabetically by key
-- Sort carry-over items by points descending (highest first), then alphabetically by key
+- Sort sprint work by status category (Done first, then In Progress, then To Do/Open), then by points descending, then alphabetically by key
 - The `generated` timestamp should be current UTC time in ISO 8601 format
 
 ### Step 8 — Write to vault
