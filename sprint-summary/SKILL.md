@@ -189,8 +189,10 @@ If no matching sprint is found for a team, warn the user and skip that team.
 Use the **Atlassian MCP tool** `searchJiraIssuesUsingJql` for issue queries. Use `maxResults: 50` per CLAUDE.md requirements. Query using the **sprint ID** (numeric) for reliability:
 
 ```
-sprint = {sprintId} AND project = {PROJECT_KEY} ORDER BY issuetype, priority DESC
+sprint = {sprintId} AND project = {PROJECT_KEY} AND issuetype not in subtaskIssueTypes() ORDER BY issuetype, priority DESC
 ```
+
+This excludes all sub-task types (including "Code" and standard "Sub-task") from the results. Sub-tasks are implementation details of their parent stories and should not appear as independent line items in the sprint summary — their work is already represented by the parent issue.
 
 Request fields: `summary`, `status`, `issuetype`, `assignee`, `priority`, and the story points field (`customfield_10021`).
 
