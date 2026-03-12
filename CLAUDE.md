@@ -20,6 +20,10 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md          # Skill definition (frontmatter + prompt)
   feedback-perf/
     SKILL.md
+  retro-summary/
+    SKILL.md
+  sprint-summary/
+    SKILL.md
 ```
 
 ## Conventions
