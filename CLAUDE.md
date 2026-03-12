@@ -36,3 +36,4 @@ Each skill lives in its own directory with a `SKILL.md` file:
 |------|----------|
 | `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH` — shared by all vault-related skills |
 | `~/.bonusly_env` | `BONUSLY_API_TOKEN` |
+| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_STORY_POINTS_FIELD`, `SPRINT_TEAMS` — Jira credentials and team config for sprint summaries |
