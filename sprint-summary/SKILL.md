@@ -16,7 +16,7 @@ This skill uses **up to three data sources**:
 
 1. **Jira Agile REST API** (via `curl` in a `bash -c` subshell) — for sprint metadata: board discovery, sprint listing, sprint goals, and sprint dates. The Atlassian MCP tools do not expose these endpoints.
 2. **Atlassian MCP tools** (`searchJiraIssuesUsingJql`) — for querying issues within a sprint. Story points (`customfield_10021`) are returned correctly via MCP.
-3. **GitLab REST API** (via `curl`, optional) — for merge request metrics. Requires `GITLAB_TOKEN` and `GITLAB_PROJECT_ID` in `~/.sprint_summary_env`. If not configured, the Engineering Metrics section is omitted.
+3. **GitLab REST API** (via `curl`, optional) — for merge request metrics. Requires `GITLAB_TOKEN` (with `read_api` scope) and `GITLAB_PROJECT_ID` in `~/.sprint_summary_env`. If not configured, the Engineering Metrics section is omitted.
 
 **Shell compatibility:** The env file uses `export` syntax. Always use `bash -c 'source ~/.sprint_summary_env && ...'` for curl commands — `source` alone does not work in zsh subshells spawned by the Bash tool.
 
