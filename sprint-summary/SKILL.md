@@ -3,7 +3,6 @@ name: sprint-summary
 description: Generate sprint summary from Jira data into Obsidian vault
 disable-model-invocation: true
 argument-hint: "[sprint-name] [--team <name>] [--dry-run]"
-allowed-tools: Read Edit Write Glob Bash AskUserQuestion
 ---
 
 # Sprint Summary
@@ -191,17 +190,31 @@ If no matching sprint is found for a team, warn the user and skip that team.
 
 ### Step 5 — Fetch sprint data
 
-Use the **Atlassian MCP tool** `searchJiraIssuesUsingJql` for issue queries. Use `maxResults: 50` per CLAUDE.md requirements. Query using the **sprint ID** (numeric) for reliability:
+Use the **Atlassian MCP tool** `searchJiraIssuesUsingJql` for issue queries. Use `maxResults: 50` per CLAUDE.md requirements. Query using the **sprint ID** (numeric) for reliability.
+
+#### 5a. Fetch project issues (including subtasks)
 
 ```
-sprint = {sprintId} AND project = {PROJECT_KEY} AND issuetype not in subtaskIssueTypes() ORDER BY issuetype, priority DESC
+sprint = {sprintId} AND project = {PROJECT_KEY} ORDER BY issuetype, priority DESC
 ```
 
-This excludes all sub-task types (including "Code" and standard "Sub-task") from the results. Sub-tasks are implementation details of their parent stories and should not appear as independent line items in the sprint summary — their work is already represented by the parent issue.
+Request fields: `summary`, `status`, `issuetype`, `assignee`, `priority`, `parent`, and the story points field (`customfield_10021`).
 
-Request fields: `summary`, `status`, `issuetype`, `assignee`, `priority`, and the story points field (`customfield_10021`).
+#### 5b. Fetch support tickets
 
-**Run MCP queries for all teams in parallel** when possible.
+Query for ECS (support) tickets in the same sprint:
+
+```
+sprint = {sprintId} AND project = ECS ORDER BY priority DESC, status
+```
+
+Request fields: `summary`, `status`, `issuetype`, `assignee`, `priority`.
+
+ECS tickets never have story points — do not request or display them.
+
+#### 5c. Run queries
+
+**Run all MCP queries in parallel** when possible (project issues + ECS for each team).
 
 **Pagination:** If `totalCount` exceeds 50, make additional queries using the `nextPageToken` parameter until all issues are fetched.
 
@@ -212,53 +225,61 @@ python3 -c "
 import json, sys
 with open('{RESULT_FILE}') as f:
     raw = json.load(f)
-issues = json.loads(raw[0]['text'])['issues']
-print(f'Total: {len(issues)}')
-for issue in issues:
+data = json.loads(raw[0]['text']) if isinstance(raw, list) else raw
+issues_obj = data.get('issues', data)
+nodes = issues_obj.get('nodes', issues_obj.get('issues', []))
+print(f'Total: {len(nodes)}')
+for issue in nodes:
     f = issue['fields']
     key = issue['key']
     itype = f['issuetype']['name']
+    subtask = f['issuetype'].get('subtask', False)
     status = f['status']['name']
     cat = f['status']['statusCategory']['name']
     assignee = f['assignee']['displayName'] if f.get('assignee') else 'Unassigned'
     pts = f.get('customfield_10021')
     pts = '-' if pts is None else pts
     pri = f.get('priority', {}).get('name', 'Default')
-    print(f'{key}|{itype}|{status}|{cat}|{assignee}|{pts}|{pri}|{f[\"summary\"]}')
+    parent = f.get('parent', {}).get('key', '') if f.get('parent') else ''
+    print(f'{key}|{itype}|{subtask}|{status}|{cat}|{assignee}|{pts}|{pri}|{parent}|{f[\"summary\"]}')
 "
 ```
 
-Process the results:
+#### 5d. Process results
 
-1. **Classify completion** — an issue is "completed" if its status category is "Done" (includes statuses: Done, Closed, Resolved, Cancelled). All other statuses are incomplete. Do **not** separate into different groups — all issues go into a single list.
+1. **Separate parent issues from subtasks** — use the `issuetype.subtask` boolean field or the presence of a `parent` field. Group subtasks under their parent issue key.
 
-2. **Calculate metrics:**
-   - **Points committed** — sum of story points for all issues in the sprint (skip issues with no points)
-   - **Points completed** — sum of story points for completed issues only
+2. **Classify completion** — an issue is "completed" if its status category is "Done" (includes statuses: Done, Closed, Resolved, Cancelled). All other statuses are incomplete. Do **not** separate into different groups — all issues go into a single list.
+
+3. **Calculate metrics from parent issues only** — subtasks and ECS tickets are excluded from all metrics:
+   - **Points committed** — sum of story points for parent issues in the sprint (skip issues with no points)
+   - **Points completed** — sum of story points for completed parent issues only
    - **Completion rate** — `(points_completed / points_committed) * 100`, rounded to nearest integer. If zero committed, show `N/A`.
-   - **Issue counts by type** — count of completed vs total for each issue type (Story, Bug, Task, etc.)
-   - **Total issues** — completed count and total count
+   - **Issue counts by type** — count of completed vs total for each parent issue type (Story, Bug, Task, etc.)
+   - **Total issues** — completed count and total count (parent issues only)
 
-3. **For each issue, record:**
+4. **For each issue, record:**
    - Issue key (e.g., `COPS-123`)
    - Summary
    - Issue type
+   - Whether it's a subtask
+   - Parent issue key (for subtasks)
    - Status
    - Assignee display name (or "Unassigned")
-   - Story points (or `-` if none)
+   - Story points (or `-` if none; omit for subtasks)
    - Priority
 
-### Step 5b — Fetch MR data via Jira Dev Status API
+### Step 5e — Fetch MR data via Jira Dev Status API
 
 **Skip this step entirely** if `GITLAB_URL` is not set in the environment. Omit the Engineering Metrics section from the output.
 
 For each sprint issue from Step 5, query the Jira dev-status API to get linked merge requests. This uses the GitLab-Jira integration and catches all linked MRs regardless of branch naming convention.
 
-#### 5b.1 — Get issue IDs
+#### 5e.1 — Get issue IDs
 
 The dev-status API requires **numeric issue IDs** (not issue keys). The issue IDs were already returned by the MCP query in Step 5 — each issue object has an `id` field. Collect the list of `{issue_key: issue_id}` pairs.
 
-#### 5b.2 — Query dev-status for each issue
+#### 5e.2 — Query dev-status for each issue
 
 For each issue, fetch linked MRs:
 
@@ -271,7 +292,7 @@ bash -c 'source ~/.sprint_summary_env && curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN
 
 Parse the response to extract MRs from `detail[].pullRequests[]`.
 
-#### 5b.3 — Filter and extract MR details
+#### 5e.3 — Filter and extract MR details
 
 For each returned MR:
 1. **Only include MRs with `status: "MERGED"`** — skip open or closed MRs.
@@ -283,11 +304,11 @@ For each returned MR:
    - `author.name`
    - `source.branch`
    - `lastUpdate` (this is the merge timestamp)
-   - The parent issue key (from Step 5b.1)
+   - The parent issue key (from Step 5e.1)
 
 4. **Deduplicate** — if the same MR `iid` appears for multiple issues (e.g., one MR closes multiple issues), count it only once but record all linked issue keys.
 
-#### 5b.4 — Fetch time-to-merge from GitLab
+#### 5e.4 — Fetch time-to-merge from GitLab
 
 The Jira dev-status response does not include `created_at` — only `lastUpdate` (merge time). To calculate time-to-merge, fetch each unique MR's `created_at` from GitLab:
 
@@ -303,7 +324,7 @@ Extract `created_at` and `merged_at` to calculate time-to-merge in hours.
 
 **Run in parallel batches** (up to 10 at a time) to keep total time reasonable.
 
-#### 5b.5 — Calculate aggregate metrics
+#### 5e.5 — Calculate aggregate metrics
 
 - **Total MRs merged** — count of unique merged MRs
 - **Avg time to merge** — mean of (merged_at - created_at) in hours, 1 decimal place (only if GitLab data available)
@@ -403,8 +424,20 @@ source: jira
 
 | Key | Type | Summary | Status | Assignee | Points |
 |-----|------|---------|--------|----------|--------|
-{For each issue:}
+{For each parent issue, followed immediately by its subtasks:}
 | [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {issuetype} | {summary} | {status} | {assignee} | {points} |
+| [{SUBTASK_KEY}]({JIRA_BASE_URL}/browse/{SUBTASK_KEY}) | {issuetype} | ↳ {summary} | {status} | {assignee} | - |
+
+{Subtask rows use "↳ " prefix on the summary to visually indicate nesting. Subtasks always show "-" for points.}
+
+## Support
+
+{Only include this section if ECS tickets were found in the sprint. Omit entirely otherwise.}
+
+| Key | Type | Summary | Status | Priority | Assignee |
+|-----|------|---------|--------|----------|----------|
+{For each ECS issue:}
+| [{KEY}]({JIRA_BASE_URL}/browse/{KEY}) | {issuetype} | {summary} | {status} | {priority} | {assignee} |
 
 ## Highlights
 
@@ -423,7 +456,9 @@ source: jira
 - `start_date_display` and `end_date_display` should be human-readable (e.g., "3 Mar 2026")
 - Issue keys should be linked to Jira using `{JIRA_BASE_URL}/browse/{KEY}`
 - Points should show `-` if no story points assigned
-- Sort sprint work by status category (Done first, then In Progress, then To Do/Open), then by points descending, then alphabetically by key
+- Sort parent issues in sprint work by status category (Done first, then In Progress, then To Do/Open), then by points descending, then alphabetically by key
+- Subtasks appear immediately after their parent issue, sorted by status category then key
+- Sort ECS support tickets by priority (Highest first), then status, then key
 - The `generated` timestamp should be current UTC time in ISO 8601 format
 
 ### Step 8 — Write to vault
