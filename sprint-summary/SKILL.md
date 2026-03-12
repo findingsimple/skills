@@ -102,34 +102,25 @@ If multiple boards exist, prefer the one whose name contains the project key or 
 
 Tell the user the discovered board ID so they can update `~/.sprint_summary_env` to skip discovery next time.
 
-#### 4b. Find sprint and get details
+#### 4b. List recent sprints and prompt user to choose
 
-Run **one curl per team** to get the latest closed sprint with full details. This combines the sprint listing and detail fetch into a single call:
-
-**If no sprint name (latest completed) — run all teams in parallel:**
+Fetch recent closed (and active) sprints for the **first team's board** — all teams share the same sprint cadence, so one board is sufficient for the sprint list.
 
 ```bash
 bash -c 'source ~/.sprint_summary_env && curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-  "$JIRA_BASE_URL/rest/agile/1.0/board/{BOARD_ID}/sprint?state=closed&maxResults=50"' \
+  "$JIRA_BASE_URL/rest/agile/1.0/board/{BOARD_ID}/sprint?state=active,closed&maxResults=50"' \
   | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 sprints = sorted(data.get('values', []), key=lambda s: s.get('completeDate', s.get('endDate', '')), reverse=True)
-if sprints:
-    s = sprints[0]
-    print(f\"ID: {s['id']}\")
-    print(f\"Name: {s['name']}\")
-    print(f\"State: {s['state']}\")
-    print(f\"Start: {s.get('startDate', 'N/A')}\")
-    print(f\"End: {s.get('endDate', 'N/A')}\")
-    print(f\"Completed: {s.get('completeDate', 'N/A')}\")
-    print(f\"Goal: {s.get('goal', '')}\")
-else:
-    print('NO_SPRINTS_FOUND')
+for s in sprints[:5]:
+    state = s['state'].upper()
+    end = s.get('endDate', 'N/A')[:10]
+    print(f\"{s['id']}|{s['name']}|{state}|{end}\")
 "
 ```
 
-**If a sprint name was provided**, add `state=active,closed` and filter by name:
+**If a sprint name was provided via arguments**, filter to the matching sprint — no prompt needed:
 
 ```bash
 bash -c 'source ~/.sprint_summary_env && curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
@@ -137,6 +128,40 @@ bash -c 'source ~/.sprint_summary_env && curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN
   | python3 -c "
 import sys, json
 name_filter = '{SPRINT_NAME}'.lower()
+data = json.load(sys.stdin)
+for s in data.get('values', []):
+    if name_filter in s['name'].lower():
+        print(f\"ID: {s['id']}\")
+        print(f\"Name: {s['name']}\")
+        print(f\"State: {s['state']}\")
+        print(f\"Start: {s.get('startDate', 'N/A')}\")
+        print(f\"End: {s.get('endDate', 'N/A')}\")
+        print(f\"Completed: {s.get('completeDate', 'N/A')}\")
+        print(f\"Goal: {s.get('goal', '')}\")
+        break
+else:
+    print('NO_MATCH_FOUND')
+"
+```
+
+**If no sprint name was provided**, use `AskUserQuestion` to let the user choose from the most recent sprints. Show up to 4 options (the AskUserQuestion limit), with the latest completed sprint first as the recommended option:
+
+- Each option label: `"{sprint_name} ({end_date})"` — append `" [ACTIVE]"` if the sprint state is active
+- Each option description: `"Sprint ending {end_date}, state: {state}"`
+- The user can also type a custom sprint name via "Other"
+
+After the user selects, fetch the full sprint details (start date, end date, goal) for the chosen sprint.
+
+#### 4c. Get sprint details for all teams
+
+Once the sprint is identified, fetch its details from **each team's board** (run in parallel). The sprint may have the same name but different IDs on different boards:
+
+```bash
+bash -c 'source ~/.sprint_summary_env && curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+  "$JIRA_BASE_URL/rest/agile/1.0/board/{BOARD_ID}/sprint?state=active,closed&maxResults=50"' \
+  | python3 -c "
+import sys, json
+name_filter = '{SELECTED_SPRINT_NAME}'.lower()
 data = json.load(sys.stdin)
 for s in data.get('values', []):
     if name_filter in s['name'].lower():
