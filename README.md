@@ -36,18 +36,10 @@ Create `~/.sprint_summary_env` (for sprint-summary only):
 
 ```bash
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
-export JIRA_STORY_POINTS_FIELD="customfield_10021"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your_api_token"
 # Team config — VAULT_DIR|PROJECT_KEY|BOARD_ID|DISPLAY_NAME (comma-separated)
 export SPRINT_TEAMS="TeamA|PROJA|123|Team Alpha,TeamB|PROJB|456|Team Beta"
-
-# GitLab (optional — for MR metrics in sprint summaries)
-# GITLAB_URL enables MR metrics via Jira's dev-status API (GitLab-Jira integration).
-# GITLAB_TOKEN + GITLAB_PROJECT_ID are optional — used for time-to-merge calculations.
-export GITLAB_URL="https://gitlab.com"
-export GITLAB_TOKEN="glpat-your-token-here"       # read_api scope, optional
-export GITLAB_PROJECT_ID="12345"                   # numeric project ID, optional
 ```
 
 ### Vault structure
@@ -126,19 +118,18 @@ Extract retrospective data from a FigJam board (Rose/Thorn/Bud format), synthesi
 
 ### sprint-summary
 
-Pull Jira sprint data (issues, story points, goals, dates) for configured teams and write structured sprint summary markdown files into the vault. Optionally enriches with GitLab merge request metrics (time to merge, MR counts per author) when GitLab credentials are configured.
+Pull Jira sprint data (issues, story points, goals, dates) for configured teams and write structured sprint summary markdown files into the vault.
 
 ```bash
-/sprint-summary                          # latest completed sprint, all teams
-/sprint-summary --team ACE               # single team
-/sprint-summary "Sprint 2026 4"          # specific sprint by name
-/sprint-summary --dry-run                # preview without writing
-/sprint-summary --team ACE --dry-run     # combine flags
+/sprint-summary                          # prompts for team, then shows recent closed sprints
+/sprint-summary --team COPS              # skip team prompt
+/sprint-summary "Sprint 2026 4"          # specific sprint by name (skip sprint prompt)
+/sprint-summary --team COPS --dry-run    # preview without writing
 ```
+
+Generates one team per run to keep context usage low. Run again for additional teams.
 
 **Prerequisites:**
 - `~/.obsidian_env` with `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH`
 - `~/.sprint_summary_env` with Jira credentials and team config (see Setup above)
 - A Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens))
-- Atlassian MCP server connected in Claude Code
-- *(Optional)* `GITLAB_URL` in `~/.sprint_summary_env` for MR metrics (uses Jira dev-status API via GitLab-Jira integration). Add `GITLAB_TOKEN` + `GITLAB_PROJECT_ID` for time-to-merge calculations.
