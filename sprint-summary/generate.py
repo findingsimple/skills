@@ -8,6 +8,7 @@ import sys
 import urllib.request
 import base64
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -45,7 +46,7 @@ def jira_get(base_url, path, auth):
         base_url + path,
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
 
 
@@ -133,41 +134,59 @@ def main():
         if est and est.get("value") is not None:
             by_type[tn]["points"] += float(est["value"])
 
-    # Fetch subtasks
-    print("Fetching subtasks...", file=sys.stderr)
-    subtasks = []
-    start_at = 0
-    while True:
+    # Fetch subtasks and ECS tickets in parallel
+    print("Fetching subtasks and ECS tickets...", file=sys.stderr)
+
+    def fetch_subtasks():
+        """Fetch subtasks with parallel pagination after first page."""
         jql = "sprint=%s AND issuetype in subtaskIssueTypes() ORDER BY parent,key" % sprint_id
-        path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority,parent&maxResults=50&startAt=%d" % (
-            urllib.request.quote(jql, safe=""),
-            start_at,
-        )
+        encoded_jql = urllib.request.quote(jql, safe="")
+        fields = "summary,status,issuetype,assignee,priority,parent"
+
+        # First page to get total count
+        path = "/rest/api/3/search/jql?jql=%s&fields=%s&maxResults=50&startAt=0" % (encoded_jql, fields)
         data = jira_get(base_url, path, auth)
-        issues = data.get("issues", [])
-        subtasks.extend(issues)
-        if len(issues) < 50:
-            break
-        start_at += 50
+        results = data.get("issues", [])
+        total = data.get("total", 0)
+
+        if total > 50:
+            # Fire off remaining pages in parallel
+            offsets = list(range(50, total, 50))
+
+            def fetch_page(offset):
+                p = "/rest/api/3/search/jql?jql=%s&fields=%s&maxResults=50&startAt=%d" % (encoded_jql, fields, offset)
+                return jira_get(base_url, p, auth).get("issues", [])
+
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                futures = [pool.submit(fetch_page, o) for o in offsets]
+                for future in as_completed(futures):
+                    results.extend(future.result())
+
+        return results
+
+    def fetch_ecs():
+        """Fetch ECS support tickets."""
+        try:
+            jql = "sprint=%s AND project=ECS ORDER BY priority DESC,status" % sprint_id
+            path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority&maxResults=50" % (
+                urllib.request.quote(jql, safe=""),
+            )
+            return jira_get(base_url, path, auth).get("issues", [])
+        except Exception as e:
+            print("Note: Could not fetch ECS tickets: %s" % e, file=sys.stderr)
+            return []
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_subtasks = pool.submit(fetch_subtasks)
+        f_ecs = pool.submit(fetch_ecs)
+        subtasks = f_subtasks.result()
+        ecs_issues = f_ecs.result()
 
     subtask_map = defaultdict(list)
     for st in subtasks:
         parent_key = st.get("fields", {}).get("parent", {}).get("key", "")
         if parent_key:
             subtask_map[parent_key].append(st)
-
-    # Fetch ECS support tickets
-    print("Fetching ECS tickets...", file=sys.stderr)
-    ecs_issues = []
-    try:
-        jql = "sprint=%s AND project=ECS ORDER BY priority DESC,status" % sprint_id
-        path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority&maxResults=50" % (
-            urllib.request.quote(jql, safe=""),
-        )
-        data = jira_get(base_url, path, auth)
-        ecs_issues = data.get("issues", [])
-    except Exception as e:
-        print("Note: Could not fetch ECS tickets: %s" % e, file=sys.stderr)
 
     # Build markdown
     print("Generating markdown...", file=sys.stderr)

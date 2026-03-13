@@ -77,7 +77,7 @@ def jira_get(base_url, path, auth):
         base_url + path,
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
 
 
