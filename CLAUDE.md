@@ -22,8 +22,14 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
   retro-summary/
     SKILL.md
+  sprint-metrics/
+    SKILL.md
+    setup.py          # Validates env, discovers boards/sprints
+    generate.py       # Fetches GitLab MR data, calculates metrics, writes markdown
   sprint-summary/
     SKILL.md
+    setup.py
+    generate.py
 ```
 
 ## Conventions
@@ -43,4 +49,4 @@ Each skill lives in its own directory with a `SKILL.md` file:
 |------|----------|
 | `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH` — shared by all vault-related skills |
 | `~/.bonusly_env` | `BONUSLY_API_TOKEN` |
-| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `SPRINT_TEAMS` — Jira credentials and team config |
+| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `SPRINT_TEAMS`, `GITLAB_URL`, `GITLAB_TOKEN`, `GITLAB_PROJECT_ID` — Jira/GitLab credentials and team config |
