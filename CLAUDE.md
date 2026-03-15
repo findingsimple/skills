@@ -22,6 +22,10 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
   retro-summary/
     SKILL.md
+  root-cause-triage/
+    SKILL.md
+    fetch.py          # Fetches triage issues, analyzes completeness, outputs summary
+    triage.py         # Executes confirmed transitions + adds comments
   sprint-metrics/
     SKILL.md
     setup.py          # Validates env, discovers boards/sprints
@@ -49,4 +53,4 @@ Each skill lives in its own directory with a `SKILL.md` file:
 |------|----------|
 | `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH` — shared by all vault-related skills |
 | `~/.bonusly_env` | `BONUSLY_API_TOKEN` |
-| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `SPRINT_TEAMS`, `GITLAB_URL`, `GITLAB_TOKEN`, `GITLAB_PROJECT_ID` — Jira/GitLab credentials and team config |
+| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `SPRINT_TEAMS`, `GITLAB_URL`, `GITLAB_TOKEN`, `GITLAB_PROJECT_ID`, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY` — Jira/GitLab credentials, team config, and triage board settings |

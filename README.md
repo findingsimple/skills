@@ -14,6 +14,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
+| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — analyze completeness, recommend and execute transitions |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
 ## Setup
@@ -33,7 +34,7 @@ Create `~/.bonusly_env` (for bonusly-sync only):
 export BONUSLY_API_TOKEN="your_token_here"
 ```
 
-Create `~/.sprint_summary_env` (for sprint-summary and sprint-metrics):
+Create `~/.sprint_summary_env` (for sprint-summary, sprint-metrics, and root-cause-triage):
 
 ```bash
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
@@ -46,6 +47,10 @@ export SPRINT_TEAMS="TeamA|PROJA|123|Team Alpha,TeamB|PROJB|456|Team Beta"
 export GITLAB_URL="https://gitlab.com"
 export GITLAB_TOKEN="your_gitlab_token"        # read_api scope
 export GITLAB_PROJECT_ID="12345678"
+
+# Root cause triage (required for root-cause-triage)
+export TRIAGE_BOARD_ID="731"
+export TRIAGE_PARENT_ISSUE_KEY="PROJ-1234"
 ```
 
 ### Vault structure
@@ -122,6 +127,18 @@ Extract retrospective data from a FigJam board (Rose/Thorn/Bud format), synthesi
 - `~/.obsidian_env` with `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH`
 - A FigJam board using Rose/Thorn/Bud retro format with section-based layout
 - Figma MCP server connected in Claude Code
+
+### root-cause-triage
+
+Triage root cause tickets on a Jira board. Fetches issues in the "To Triage" column, analyzes description completeness against a template (Background Context, Steps to Reproduce, Actual/Expected Results, Analysis), recommends transitions, and executes confirmed actions.
+
+```bash
+/root-cause-triage              # interactive triage
+/root-cause-triage --dry-run    # preview without making changes
+```
+
+**Prerequisites:**
+- `~/.sprint_summary_env` with Jira credentials, `TRIAGE_BOARD_ID`, and `TRIAGE_PARENT_ISSUE_KEY`
 
 ### sprint-metrics
 
