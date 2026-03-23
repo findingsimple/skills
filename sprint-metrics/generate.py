@@ -129,7 +129,7 @@ def main():
         # Resolve display name from SPRINT_TEAMS env var
         display_name = args.team_display_name or ""
         if not display_name:
-            for t in env.get("SPRINT_TEAMS", "").split(","):
+            for t in env["SPRINT_TEAMS"].split(","):
                 parts = t.strip().split("|")
                 if len(parts) == 4 and parts[0] == vault_dir:
                     display_name = parts[3]

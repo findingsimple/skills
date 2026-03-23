@@ -7,8 +7,6 @@ import sys
 
 from jira_client import load_env, init_auth, jira_get, jira_search_all
 
-BOARD_ID = None  # Set from TRIAGE_BOARD_ID env var
-PARENT_ISSUE_KEY = None  # Set from TRIAGE_PARENT_ISSUE_KEY env var
 
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "TRIAGE_BOARD_ID", "TRIAGE_PARENT_ISSUE_KEY"]
 
@@ -39,9 +37,9 @@ RECURRENCE_THRESHOLD = 0.35
 CLOSED_STATUSES = {"done", "closed", "completed", "resolved", "completed / roadmapped", "rejected"}
 
 
-def discover_triage_statuses(base_url, auth):
+def discover_triage_statuses(base_url, auth, board_id):
     """Get board config and find which Jira statuses map to the 'To Triage' column."""
-    config = jira_get(base_url, "/rest/agile/1.0/board/%d/configuration" % BOARD_ID, auth)
+    config = jira_get(base_url, "/rest/agile/1.0/board/%d/configuration" % board_id, auth)
     columns = config.get("columnConfig", {}).get("columns", [])
 
     triage_statuses = []
@@ -62,10 +60,10 @@ def discover_triage_statuses(base_url, auth):
     return triage_statuses
 
 
-def fetch_issues(base_url, auth, status_ids):
+def fetch_issues(base_url, auth, status_ids, parent_issue_key):
     """Fetch issues under the parent epic in the discovered triage statuses."""
     status_list = ", ".join(status_ids)
-    jql = "parent = %s AND status in (%s) ORDER BY created ASC" % (PARENT_ISSUE_KEY, status_list)
+    jql = "parent = %s AND status in (%s) ORDER BY created ASC" % (parent_issue_key, status_list)
     return jira_search_all(base_url, auth, jql, "key,summary,status,description,created,issuetype,issuelinks,subtasks")
 
 
@@ -88,9 +86,9 @@ def fetch_subtask_descriptions(base_url, auth, subtasks):
     return "\n\n".join(parts)
 
 
-def fetch_all_sibling_issues(base_url, auth):
+def fetch_all_sibling_issues(base_url, auth, parent_issue_key):
     """Fetch all issues under the parent epic for duplicate comparison (summary + description)."""
-    jql = "parent = %s ORDER BY created ASC" % PARENT_ISSUE_KEY
+    jql = "parent = %s ORDER BY created ASC" % parent_issue_key
     return jira_search_all(base_url, auth, jql, "key,summary,status,description")
 
 
@@ -236,27 +234,26 @@ def main():
 
     base_url, auth = init_auth(env)
 
-    global BOARD_ID, PARENT_ISSUE_KEY
-    BOARD_ID = int(env.get("TRIAGE_BOARD_ID", "0"))
-    PARENT_ISSUE_KEY = env.get("TRIAGE_PARENT_ISSUE_KEY", "")
-    if not BOARD_ID or not PARENT_ISSUE_KEY:
+    board_id = int(env.get("TRIAGE_BOARD_ID", "0"))
+    parent_issue_key = env.get("TRIAGE_PARENT_ISSUE_KEY", "")
+    if not board_id or not parent_issue_key:
         print("ERROR: TRIAGE_BOARD_ID and TRIAGE_PARENT_ISSUE_KEY must be set in ~/.zshrc")
         sys.exit(1)
-    if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", PARENT_ISSUE_KEY):
-        print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % PARENT_ISSUE_KEY)
+    if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", parent_issue_key):
+        print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % parent_issue_key)
         sys.exit(1)
 
     # Step 1: Discover triage statuses from board config
     print("Discovering board configuration...", file=sys.stderr)
-    status_ids = discover_triage_statuses(base_url, auth)
+    status_ids = discover_triage_statuses(base_url, auth, board_id)
     if not status_ids:
-        print("ERROR: Could not determine triage statuses from board %d configuration" % BOARD_ID)
+        print("ERROR: Could not determine triage statuses from board %d configuration" % board_id)
         sys.exit(1)
     print("Triage status IDs: %s" % ", ".join(status_ids), file=sys.stderr)
 
     # Step 2: Fetch triage issues + all siblings for duplicate detection
     print("Fetching issues...", file=sys.stderr)
-    issues = fetch_issues(base_url, auth, status_ids)
+    issues = fetch_issues(base_url, auth, status_ids, parent_issue_key)
 
     if not issues:
         print("\nNo issues found in 'To Triage' status.")
@@ -267,7 +264,7 @@ def main():
 
     print("Found %d issues to triage" % len(issues), file=sys.stderr)
     print("Fetching all sibling issues for duplicate detection...", file=sys.stderr)
-    all_siblings = fetch_all_sibling_issues(base_url, auth)
+    all_siblings = fetch_all_sibling_issues(base_url, auth, parent_issue_key)
     triage_keys = {i["key"] for i in issues}
     print("Found %d total sibling issues\n" % len(all_siblings), file=sys.stderr)
 
