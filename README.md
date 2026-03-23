@@ -113,7 +113,7 @@ Capture dated performance feedback throughout the review period, then synthesize
 
 ### retro-summary
 
-Extract retrospective data from a FigJam board (Rose/Thorn/Bud format), synthesize themes with AI, and write a structured summary to the vault.
+Extract retrospective data from a FigJam board, synthesize themes with AI, and write a structured summary to the vault.
 
 ```bash
 /retro-summary https://figma.com/board/abc123/TeamA-Retro          # team inferred from board name
