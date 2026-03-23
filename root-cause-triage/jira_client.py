@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 import urllib.parse
 import base64
@@ -41,16 +42,20 @@ def jira_get(base_url, path, auth):
         base_url + path,
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Jira API %d on %s: %s" % (e.code, path, body)) from None
 
 
 def jira_post(base_url, path, auth, data):
     """POST JSON to the Jira API and return the parsed response (or None)."""
-    body = json.dumps(data).encode()
+    req_body = json.dumps(data).encode()
     req = urllib.request.Request(
         base_url + path,
-        data=body,
+        data=req_body,
         headers={
             "Authorization": "Basic " + auth,
             "Accept": "application/json",
@@ -58,11 +63,15 @@ def jira_post(base_url, path, auth, data):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        response_body = resp.read()
-        if response_body:
-            return json.loads(response_body)
-        return None
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            response_body = resp.read()
+            if response_body:
+                return json.loads(response_body)
+            return None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Jira API %d on POST %s: %s" % (e.code, path, body)) from None
 
 
 def jira_search_all(base_url, auth, jql, fields):

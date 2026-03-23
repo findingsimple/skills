@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 import base64
 
@@ -40,5 +41,9 @@ def jira_get(base_url, path, auth):
         base_url + path,
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Jira API %d on %s: %s" % (e.code, path, body)) from None

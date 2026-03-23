@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 import urllib.parse
 
@@ -29,8 +30,12 @@ def bonusly_get(token, path, params=None):
         url,
         headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Bonusly API %d on %s: %s" % (e.code, path, body)) from None
 
 
 def bonusly_get_all(token, path, params):
