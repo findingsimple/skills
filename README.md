@@ -19,36 +19,31 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 
 ## Setup
 
-### Environment files
+### Environment variables
 
-Create `~/.obsidian_env` (shared by all vault-related skills):
+Add the following exports to `~/.zshrc`:
 
 ```bash
+# Obsidian vault (shared by all vault-related skills)
 export OBSIDIAN_VAULT_PATH="/path/to/your/vault"
 export OBSIDIAN_TEAMS_PATH="$OBSIDIAN_VAULT_PATH/Teams"
-```
 
-Create `~/.bonusly_env` (for bonusly-sync only):
-
-```bash
+# Bonusly (bonusly-sync)
 export BONUSLY_API_TOKEN="your_token_here"
-```
 
-Create `~/.sprint_summary_env` (for sprint-summary, sprint-metrics, and root-cause-triage):
-
-```bash
+# Jira (sprint-summary, sprint-metrics, root-cause-triage)
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your_api_token"
 # Team config — VAULT_DIR|PROJECT_KEY|BOARD_ID|DISPLAY_NAME (comma-separated)
 export SPRINT_TEAMS="TeamA|PROJA|123|Team Alpha,TeamB|PROJB|456|Team Beta"
 
-# GitLab (required for sprint-metrics)
+# GitLab (sprint-metrics)
 export GITLAB_URL="https://gitlab.com"
 export GITLAB_TOKEN="your_gitlab_token"        # read_api scope
 export GITLAB_PROJECT_ID="12345678"
 
-# Root cause triage (required for root-cause-triage)
+# Root cause triage
 export TRIAGE_BOARD_ID="731"
 export TRIAGE_PARENT_ISSUE_KEY="PROJ-1234"
 ```
@@ -81,13 +76,12 @@ Skills expect a teams directory with this structure:
 Pulls the previous month's Bonusly recognition (given and received) for tracked team members and saves markdown files into each person's `Feedback/` folder.
 
 ```bash
-/bonusly-sync              # sync to vault (path from ~/.obsidian_env)
+/bonusly-sync              # sync to vault
 /bonusly-sync --dry-run    # preview without writing files
 ```
 
 **Prerequisites:**
-- `~/.obsidian_env` with `OBSIDIAN_TEAMS_PATH`
-- `~/.bonusly_env` with `BONUSLY_API_TOKEN`
+- `OBSIDIAN_TEAMS_PATH` and `BONUSLY_API_TOKEN` in `~/.zshrc`
 - Person profile notes with `email` in YAML frontmatter
 
 ### feedback-perf
@@ -108,7 +102,7 @@ Capture dated performance feedback throughout the review period, then synthesize
 ```
 
 **Prerequisites:**
-- `~/.obsidian_env` with `OBSIDIAN_TEAMS_PATH`
+- `OBSIDIAN_TEAMS_PATH` in `~/.zshrc`
 - Person profile notes with YAML frontmatter
 - Review cycle documents under each person's `Feedback/` directory
 
@@ -124,7 +118,7 @@ Extract retrospective data from a FigJam board (Rose/Thorn/Bud format), synthesi
 ```
 
 **Prerequisites:**
-- `~/.obsidian_env` with `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH`
+- `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH` in `~/.zshrc`
 - A FigJam board using Rose/Thorn/Bud retro format with section-based layout
 - Figma MCP server connected in Claude Code
 
@@ -138,7 +132,7 @@ Triage root cause tickets on a Jira board. Fetches issues in the "To Triage" col
 ```
 
 **Prerequisites:**
-- `~/.sprint_summary_env` with Jira credentials, `TRIAGE_BOARD_ID`, and `TRIAGE_PARENT_ISSUE_KEY`
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `TRIAGE_BOARD_ID`, and `TRIAGE_PARENT_ISSUE_KEY` in `~/.zshrc`
 
 ### sprint-metrics
 
@@ -154,8 +148,7 @@ Generate engineering metrics from GitLab merge requests linked to Jira sprint is
 **Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR.
 
 **Prerequisites:**
-- `~/.obsidian_env` with `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH`
-- `~/.sprint_summary_env` with Jira and GitLab credentials (see Setup above)
+- `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and GitLab credentials in `~/.zshrc`
 - Existing sprint summary file (preferred) or Jira API access (fallback)
 
 ### sprint-summary
@@ -172,6 +165,5 @@ Pull Jira sprint data (issues, story points, goals, dates) for configured teams 
 Generates one team per run to keep context usage low. Run again for additional teams.
 
 **Prerequisites:**
-- `~/.obsidian_env` with `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH`
-- `~/.sprint_summary_env` with Jira credentials and team config (see Setup above)
+- `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and `SPRINT_TEAMS` in `~/.zshrc`
 - A Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens))

@@ -240,7 +240,7 @@ def main():
     BOARD_ID = int(env.get("TRIAGE_BOARD_ID", "0"))
     PARENT_ISSUE_KEY = env.get("TRIAGE_PARENT_ISSUE_KEY", "")
     if not BOARD_ID or not PARENT_ISSUE_KEY:
-        print("ERROR: TRIAGE_BOARD_ID and TRIAGE_PARENT_ISSUE_KEY must be set in ~/.sprint_summary_env")
+        print("ERROR: TRIAGE_BOARD_ID and TRIAGE_PARENT_ISSUE_KEY must be set in ~/.zshrc")
         sys.exit(1)
     if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", PARENT_ISSUE_KEY):
         print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % PARENT_ISSUE_KEY)

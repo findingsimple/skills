@@ -98,7 +98,7 @@ def main():
 
     token = env.get("BONUSLY_API_TOKEN", "")
     if not token:
-        print("ERROR: BONUSLY_API_TOKEN not set in ~/.bonusly_env")
+        print("ERROR: BONUSLY_API_TOKEN not set — add it to ~/.zshrc")
         sys.exit(1)
 
     with open(args.people_file, "r") as f:
