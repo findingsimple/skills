@@ -122,7 +122,7 @@ def main():
             "vault_path": vault_path,
             "teams_path": teams_path,
             "base_url": base_url,
-            "email": email,
+            "email": env["JIRA_EMAIL"],
             "gitlab_url": gitlab_url,
             "gitlab_project_id": gitlab_project_id,
         },

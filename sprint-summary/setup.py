@@ -115,7 +115,7 @@ def main():
             "vault_path": vault_path,
             "teams_path": teams_path,
             "base_url": base_url,
-            "email": email,
+            "email": env["JIRA_EMAIL"],
         },
         "teams": teams,
         "sprints": {k: v[:10] for k, v in all_sprints.items()},

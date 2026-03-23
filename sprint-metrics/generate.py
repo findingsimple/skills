@@ -517,7 +517,7 @@ def main():
             lines.append("| %s | %s | %s | %s |" % (mr_link, issues_str, m["author"], m["excluded_reason"]))
         lines.append("")
 
-    md = "\n".join(lines)
+    md = "\n".join(lines) + "\n"
 
     # Write or dry-run
     output_dir = os.path.join(teams_path, vault_dir, "Sprints")

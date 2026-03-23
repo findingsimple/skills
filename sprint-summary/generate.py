@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import urllib.parse
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -114,7 +115,7 @@ def main():
     def fetch_subtasks():
         """Fetch subtasks with parallel pagination after first page."""
         jql = "sprint=%s AND issuetype in subtaskIssueTypes() ORDER BY parent,key" % sprint_id
-        encoded_jql = urllib.request.quote(jql, safe="")
+        encoded_jql = urllib.parse.quote(jql, safe="")
         fields = "summary,status,issuetype,assignee,priority,parent"
 
         # First page to get total count
