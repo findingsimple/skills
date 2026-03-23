@@ -9,15 +9,27 @@ argument-hint: "--dry-run or vault-path"
 
 Sync the previous month's Bonusly recognition (given and received) for tracked team members into their `Feedback/` folders in the Obsidian vault.
 
+## Architecture
+
+This skill uses **two Python scripts** (`bonusly_client.py` and `generate.py`) in the skill directory. They handle all API calls, data processing, and file generation.
+
+### Data sources (accessed within the Python scripts)
+
+1. **Bonusly REST API** — bonus data: received and given recognition, with child bonuses (add-ons) and pagination.
+
+### Key principles
+
+**Idempotent:** Running multiple times in the same month will overwrite existing files for that period. This is intentional — re-running picks up any late +1 add-ons or recognition posted after the first sync.
+
 ## Instructions
 
-Follow these steps exactly:
+Follow these steps exactly. The skill requires **1 bash command** (1 python3 run) plus vault scanning and user interaction.
 
 ### Step 0 — Parse arguments
 
 Check `$ARGUMENTS` for flags and positional args:
 
-- If `$ARGUMENTS` contains `--dry-run`, enable **dry-run mode**. In this mode, all steps run normally (API calls, data fetching, markdown generation) but instead of writing files with the Write tool, **print the file path and full content to the output** so the user can review it. No files are created or modified.
+- If `$ARGUMENTS` contains `--dry-run`, enable **dry-run mode**. In this mode, all steps run normally (API calls, data fetching, markdown generation) but no files are created or modified — the script prints file paths and content to output for review.
 - Any remaining argument (after removing `--dry-run`) is treated as the vault path.
 
 Examples:
@@ -89,115 +101,33 @@ Skip files that don't have an `email` field in frontmatter. Skip files inside `F
 
 Build a list of people: `[ { name, email, dir }, ... ]`
 
-### Step 5 — Fetch bonuses for each person
+### Step 5 — Write people file and run generate.py
 
-For each person, fetch both received and given bonuses using `curl` and parse with `python3`.
-
-**Fetch received bonuses** (with pagination):
+Write the discovered people list to `/tmp/bonusly_people.json` using a bash heredoc:
 
 ```bash
-source ~/.bonusly_env && curl -s -H "Authorization: Bearer $BONUSLY_API_TOKEN" \
-  "https://bonus.ly/api/v1/bonuses?start_time={START_TIME}&end_time={END_TIME}&receiver_email={email}&include_children=true&limit=100&skip=0"
+cat << 'EOF' > /tmp/bonusly_people.json
+[
+  {"name": "Alex Chen", "email": "alex@example.com", "dir": "/path/to/vault/Teams/Team/Alex Chen"},
+  ...
+]
+EOF
 ```
 
-**Fetch given bonuses** (with pagination):
+Then run:
 
 ```bash
-source ~/.bonusly_env && curl -s -H "Authorization: Bearer $BONUSLY_API_TOKEN" \
-  "https://bonus.ly/api/v1/bonuses?start_time={START_TIME}&end_time={END_TIME}&giver_email={email}&include_children=true&limit=100&skip=0"
+python3 ~/.claude/skills/bonusly-sync/generate.py --people-file /tmp/bonusly_people.json --start-time "{START_TIME}" --end-time "{END_TIME}" --period "{PERIOD}" --period-label "{PERIOD_LABEL}" --teams-base "{teams_base}" [--dry-run]
 ```
 
-For each API call:
-1. Parse the JSON response with `python3`
-2. Check if `result` array has items
-3. If the response contains 100 items, fetch the next page with `skip=100`, `skip=200`, etc. until fewer than 100 items are returned
-4. Combine all pages
+Pass `--dry-run` if the user specified it in Step 0.
 
-From each bonus, extract:
-- `created_at` — format as `YYYY-MM-DD`
-- `amount` — points awarded
-- `giver.full_name` — who gave it
-- `receiver.full_name` — who received it
-- `reason` — the recognition text (plain text with hashtags)
-- `child_count` — number of +1 add-ons
-- `child_bonuses` — array of add-on bonuses, each with `giver.full_name`, `amount`, and `reason`
+The script fetches received and given bonuses for each person (with pagination), generates per-person markdown files, writes a sync log, and outputs a summary table.
 
-### Step 6 — Generate markdown files
+**Output paths:**
+- Per-person files: `{person_dir}/Feedback/Bonusly - {PERIOD}.md`
+- Sync log: `{teams_base}/Logs/Bonusly Sync - {PERIOD}.md`
 
-For each person who has at least one received or given bonus, create a markdown file.
+### Step 6 — Confirm completion
 
-**File path:** `{person_dir}/Feedback/Bonusly - {PERIOD}.md`
-
-Create the `Feedback/` directory if it doesn't exist: `mkdir -p {person_dir}/Feedback`
-
-**File format:**
-
-```markdown
----
-source: bonusly
-period: "{PERIOD}"
-generated_at: "{CURRENT_ISO_TIMESTAMP}"
----
-
-# Bonusly Recognition — {PERIOD_LABEL}
-
-## Received ({TOTAL_RECEIVED_POINTS} smiles)
-
-- **{DATE}** — +{AMOUNT} from **{GIVER_NAME}**: "{REASON}"
-  - +1 from **{CHILD_GIVER_NAME}** (+{CHILD_AMOUNT}): "{CHILD_REASON}"
-  - +1 from **{CHILD_GIVER_NAME}** (+{CHILD_AMOUNT})
-- ...
-
-## Given ({TOTAL_GIVEN_POINTS} smiles)
-
-- **{DATE}** — +{AMOUNT} to **{RECEIVER_NAME}**: "{REASON}"
-- ...
-```
-
-**Rules:**
-- If a bonus has `child_bonuses`, list each as a sub-bullet beneath the parent. Include the child's reason in quotes if it's non-empty; omit it if the child has no reason (just a bare +1).
-- Only show child bonuses under received entries (not under given entries, since those +1s aren't relevant to the person's own recognition)
-- Sort entries within each section by date ascending
-- If the "Received" section has no entries, omit the entire `## Received` section
-- If the "Given" section has no entries, omit the entire `## Given` section
-- If a person has zero received AND zero given, do NOT create a file at all
-- **Normal mode:** Use the Write tool to create each file
-- **Dry-run mode:** Instead of writing, output the file path and full generated markdown content so the user can review it. Do NOT create any files or directories.
-- `generated_at` should be the current UTC timestamp in ISO 8601 format
-- **Idempotent:** Running multiple times in the same month will overwrite the existing file for that period. This is intentional — re-running picks up any late +1 add-ons or recognition posted after the first sync.
-
-### Step 7 — Write sync log
-
-Write a summary log file to `{teams_base}/Logs/Bonusly Sync - {PERIOD}.md`. Create the `Logs/` directory with `mkdir -p` if it doesn't exist.
-
-**File format:**
-
-```markdown
----
-source: bonusly
-type: sync-log
-period: "{PERIOD}"
-synced_at: "{CURRENT_ISO_TIMESTAMP}"
----
-
-# Bonusly Sync — {PERIOD_LABEL}
-
-| Person | Received | Given | File |
-|--------|----------|-------|------|
-| Alex Chen | 3 (45 pts) | 1 (15 pts) | Created |
-| Jordan Park | 0 | 0 | Skipped |
-| ... | ... | ... | ... |
-
-**{N} files created**, {M} skipped. {TOTAL} people processed.
-```
-
-In dry-run mode, do not write the log file — just print it to the output. Use `Would create` instead of `Created` in the File column.
-
-### Step 8 — Output summary
-
-After writing the log file, also output the same summary table to the user, prefixed with:
-
-- **Normal mode:** `Bonusly sync complete for {PERIOD_LABEL}:`
-- **Dry-run mode:** `**DRY RUN** — no files were written.`
-
-Report the total number of files created (or previewed) and people processed.
+After the generate script finishes, show the user the summary output from the script.
