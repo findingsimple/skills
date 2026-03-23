@@ -144,7 +144,7 @@ def main():
         try:
             jql = "sprint=%s AND project=ECS ORDER BY priority DESC,status" % sprint_id
             path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority&maxResults=50" % (
-                urllib.request.quote(jql, safe=""),
+                urllib.parse.quote(jql, safe=""),
             )
             return jira_get(base_url, path, auth).get("issues", [])
         except Exception as e:

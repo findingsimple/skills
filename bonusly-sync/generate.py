@@ -65,11 +65,11 @@ def generate_person_markdown(period, period_label, received, given):
         for b in sorted(received, key=lambda b: b.get("created_at", "")):
             date = format_date(b.get("created_at", ""))
             amount = b.get("amount", 0)
-            giver = b.get("giver", {}).get("full_name", "Unknown")
+            giver = (b.get("giver") or {}).get("full_name", "Unknown")
             reason = b.get("reason", "").strip()
             lines.append('- **%s** — +%d from **%s**: "%s"' % (date, amount, giver, reason))
             for child in b.get("child_bonuses", []):
-                child_giver = child.get("giver", {}).get("full_name", "Unknown")
+                child_giver = (child.get("giver") or {}).get("full_name", "Unknown")
                 child_amount = child.get("amount", 0)
                 child_reason = (child.get("reason") or "").strip()
                 if child_reason:
@@ -85,7 +85,7 @@ def generate_person_markdown(period, period_label, received, given):
         for b in sorted(given, key=lambda b: b.get("created_at", "")):
             date = format_date(b.get("created_at", ""))
             amount = b.get("amount", 0)
-            receiver = b.get("receiver", {}).get("full_name", "Unknown")
+            receiver = (b.get("receiver") or {}).get("full_name", "Unknown")
             reason = b.get("reason", "").strip()
             lines.append('- **%s** — +%d to **%s**: "%s"' % (date, amount, receiver, reason))
 
