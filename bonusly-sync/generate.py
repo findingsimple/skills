@@ -149,8 +149,10 @@ def main():
                              "given_count": given_count, "given_pts": given_pts, "status": "Would create"})
         else:
             os.makedirs(os.path.join(person_dir, "Feedback"), exist_ok=True)
-            with open(file_path, "w") as f:
+            tmp_file = file_path + ".tmp"
+            with open(tmp_file, "w") as f:
                 f.write(md)
+            os.replace(tmp_file, file_path)
             log_rows.append({"name": name, "received_count": received_count, "received_pts": received_pts,
                              "given_count": given_count, "given_pts": given_pts, "status": "Created"})
         files_created += 1
@@ -183,8 +185,10 @@ def main():
         print(log_md)
     else:
         os.makedirs(os.path.join(teams_base, "Logs"), exist_ok=True)
-        with open(log_path, "w") as f:
+        tmp_file = log_path + ".tmp"
+        with open(tmp_file, "w") as f:
             f.write(log_md)
+        os.replace(tmp_file, log_path)
 
     # Output summary
     if args.dry_run:

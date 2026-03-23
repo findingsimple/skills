@@ -313,8 +313,10 @@ def main():
         print(md)
     else:
         os.makedirs(output_dir, exist_ok=True)
-        with open(file_path, "w") as f:
+        tmp_file = file_path + ".tmp"
+        with open(tmp_file, "w") as f:
             f.write(md)
+        os.replace(tmp_file, file_path)
         print("\nSprint summary written to: " + file_path)
 
     print("%s (%s%%, %s/%s pts)" % (sprint_name, completion_rate, fmt_pts(points_completed), fmt_pts(points_committed)))

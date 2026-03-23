@@ -529,8 +529,10 @@ def main():
         print(md)
     else:
         os.makedirs(output_dir, exist_ok=True)
-        with open(file_path, "w") as f:
+        tmp_file = file_path + ".tmp"
+        with open(tmp_file, "w") as f:
             f.write(md)
+        os.replace(tmp_file, file_path)
         print("\nSprint metrics written to: " + file_path)
 
     print("%d MRs | TTM: %s | Review: %s | Cycle: %s" % (
