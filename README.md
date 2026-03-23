@@ -17,6 +17,10 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — analyze completeness, recommend and execute transitions |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
+## Architecture Notes
+
+Each skill is **self-contained** — shared utilities like `jira_client.py` and `setup.py` are intentionally duplicated per skill rather than extracted into a shared module. This keeps skills decoupled so changes to one never break another, and any skill can be moved or deleted independently.
+
 ## Setup
 
 ### Environment variables

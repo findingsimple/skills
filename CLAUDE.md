@@ -43,7 +43,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
 
 ## Conventions
 
-- **One directory per skill** — skill name matches directory name
+- **One directory per skill** — skill name matches directory name. Each skill is self-contained and independently deployable. Shared utilities like `jira_client.py` and `setup.py` are intentionally duplicated per skill rather than extracted into a shared module — this keeps skills decoupled so changes to one never break another.
 - **SKILL.md defines the skill** — skills are prompt-driven; some also include Python scripts for API calls and data processing
 - **Secrets in `~/.zshrc`** — API tokens and credentials are exported in `~/.zshrc`, never in the repo
 - **Use `--dry-run`** — skills that write files should support a dry-run flag for safe testing
