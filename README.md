@@ -39,6 +39,7 @@ export BONUSLY_API_TOKEN="your_token_here"
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your_api_token"
+
 # Team config — VAULT_DIR|PROJECT_KEY|BOARD_ID|DISPLAY_NAME (comma-separated)
 export SPRINT_TEAMS="TeamA|PROJA|123|Team Alpha,TeamB|PROJB|456|Team Beta"
 
