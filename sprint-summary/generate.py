@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Sprint generate: fetches sprint data, calculates metrics, writes markdown."""
 
-import subprocess
 import json
 import os
 import sys
-import urllib.request
-import base64
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
+
+from jira_client import load_env, init_auth, jira_get
 
 
 def parse_args():
@@ -26,28 +25,6 @@ def parse_args():
     p.add_argument("--team-display-name", required=True)
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
-
-
-def load_env():
-    result = subprocess.run(
-        ["bash", "-c", "source ~/.obsidian_env && source ~/.sprint_summary_env && env"],
-        capture_output=True,
-        text=True,
-    )
-    return dict(
-        line.split("=", 1)
-        for line in result.stdout.splitlines()
-        if "=" in line
-    )
-
-
-def jira_get(base_url, path, auth):
-    req = urllib.request.Request(
-        base_url + path,
-        headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
 
 
 def safe_pts(estimate_sum):
@@ -74,13 +51,10 @@ def format_date_display(date_str):
 
 def main():
     args = parse_args()
-    env = load_env()
+    env = load_env(["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "OBSIDIAN_TEAMS_PATH"])
 
-    base_url = env["JIRA_BASE_URL"]
-    email = env["JIRA_EMAIL"]
-    token = env["JIRA_API_TOKEN"]
+    base_url, auth = init_auth(env)
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
-    auth = base64.b64encode((email + ":" + token).encode()).decode()
 
     sprint_id = args.sprint_id
     sprint_name = args.sprint_name

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Sprint metrics: fetches GitLab MR data for sprint issues, calculates engineering metrics."""
 
-import subprocess
 import json
 import os
 import re
 import sys
-import urllib.request
 import urllib.parse
-import base64
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
+
+from jira_client import load_env, init_auth, jira_get, gitlab_get
 
 
 def parse_args():
@@ -57,38 +56,6 @@ def parse_summary_file(path):
             seen.add(key)
 
     return frontmatter, issue_keys
-
-
-def load_env():
-    result = subprocess.run(
-        ["bash", "-c", "source ~/.obsidian_env && source ~/.sprint_summary_env && env"],
-        capture_output=True,
-        text=True,
-    )
-    return dict(
-        line.split("=", 1)
-        for line in result.stdout.splitlines()
-        if "=" in line
-    )
-
-
-def jira_get(base_url, path, auth):
-    req = urllib.request.Request(
-        base_url + path,
-        headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
-
-
-def gitlab_get(gitlab_url, path, token):
-    url = gitlab_url + "/api/v4" + path
-    req = urllib.request.Request(
-        url,
-        headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
 
 
 def parse_dt(dt_str):
@@ -136,16 +103,17 @@ def median(values):
 
 def main():
     args = parse_args()
-    env = load_env()
+    env = load_env([
+        "JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
+        "OBSIDIAN_TEAMS_PATH",
+        "GITLAB_URL", "GITLAB_TOKEN", "GITLAB_PROJECT_ID",
+    ])
 
-    base_url = env["JIRA_BASE_URL"]
-    email = env["JIRA_EMAIL"]
-    token = env["JIRA_API_TOKEN"]
+    base_url, auth = init_auth(env)
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
     gitlab_url = env["GITLAB_URL"]
     gitlab_token = env["GITLAB_TOKEN"]
     gitlab_project_id = env["GITLAB_PROJECT_ID"]
-    auth = base64.b64encode((email + ":" + token).encode()).decode()
 
     # Step 1: Get sprint metadata and issue keys
     if args.summary_file:

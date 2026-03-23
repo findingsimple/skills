@@ -1,39 +1,14 @@
 #!/usr/bin/env python3
 """Sprint metrics setup: validates env (including GitLab), discovers boards, lists sprints."""
 
-import subprocess
 import json
 import os
 import sys
-import urllib.request
-import base64
 
-
-def load_env():
-    result = subprocess.run(
-        ["bash", "-c", "source ~/.obsidian_env && source ~/.sprint_summary_env && env"],
-        capture_output=True,
-        text=True,
-    )
-    return dict(
-        line.split("=", 1)
-        for line in result.stdout.splitlines()
-        if "=" in line
-    )
-
-
-def jira_get(base_url, path, auth):
-    req = urllib.request.Request(
-        base_url + path,
-        headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+from jira_client import load_env, init_auth, jira_get
 
 
 def main():
-    env = load_env()
-
     required = [
         "OBSIDIAN_VAULT_PATH",
         "OBSIDIAN_TEAMS_PATH",
@@ -45,25 +20,24 @@ def main():
         "GITLAB_TOKEN",
         "GITLAB_PROJECT_ID",
     ]
-    missing = [v for v in required if v not in env]
+    env = load_env(required)
+
+    missing = [v for v in required if not env.get(v)]
     if missing:
         print("ERROR: Missing env vars: " + ", ".join(missing))
         sys.exit(1)
 
+    base_url, auth = init_auth(env)
     vault_path = env["OBSIDIAN_VAULT_PATH"]
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
-    base_url = env["JIRA_BASE_URL"]
-    email = env["JIRA_EMAIL"]
-    token = env["JIRA_API_TOKEN"]
     gitlab_url = env["GITLAB_URL"]
     gitlab_project_id = env["GITLAB_PROJECT_ID"]
-    auth = base64.b64encode((email + ":" + token).encode()).decode()
 
     print("=== ENV ===")
     print("VAULT: " + vault_path)
     print("TEAMS: " + teams_path)
     print("JIRA: " + base_url)
-    print("AUTH: " + email)
+    print("AUTH: " + env["JIRA_EMAIL"])
     print("GITLAB: " + gitlab_url)
     print("GITLAB_PROJECT: " + gitlab_project_id)
     print()
