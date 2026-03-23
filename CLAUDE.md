@@ -24,6 +24,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
   root-cause-triage/
     SKILL.md
+    jira_client.py    # Shared Jira API client (load_env, auth, get/post, paginated search)
     fetch.py          # Fetches triage issues, analyzes completeness, outputs summary
     triage.py         # Executes confirmed transitions + adds comments
   sprint-metrics/
@@ -39,7 +40,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
 ## Conventions
 
 - **One directory per skill** — skill name matches directory name
-- **SKILL.md is the entire skill** — skills are prompt-driven, no separate scripts
+- **SKILL.md defines the skill** — skills are prompt-driven; some also include Python scripts for API calls and data processing
 - **Secrets in env files** — API tokens and credentials go in `~/.bonusly_env` (or similar), never in the repo
 - **Use `--dry-run`** — skills that write files should support a dry-run flag for safe testing
 - **No real names in skill files** — use placeholder names in examples within SKILL.md
