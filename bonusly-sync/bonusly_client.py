@@ -2,14 +2,14 @@
 """Shared Bonusly API client utilities for bonusly-sync scripts."""
 
 import json
-import subprocess
+import os
 import sys
 import urllib.request
 import urllib.parse
 
 
 def load_env(keys):
-    """Load specific environment variables from ~/.bonusly_env and ~/.obsidian_env.
+    """Load specific environment variables from the shell environment.
 
     Args:
         keys: list of variable names to extract
@@ -17,18 +17,7 @@ def load_env(keys):
     Returns:
         dict mapping variable names to values
     """
-    print_vars = " ".join('"$%s"' % k for k in keys)
-    result = subprocess.run(
-        ["bash", "-c", "source ~/.bonusly_env && source ~/.obsidian_env && printf '%%s\\n' %s" % print_vars],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if result.returncode != 0:
-        print("ERROR: Failed to load env files: %s" % result.stderr.strip(), file=sys.stderr)
-        sys.exit(1)
-    values = result.stdout.splitlines()
-    return dict(zip(keys, values))
+    return {k: os.environ.get(k, "") for k in keys}
 
 
 def bonusly_get(token, path, params=None):

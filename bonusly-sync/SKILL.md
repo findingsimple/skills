@@ -39,30 +39,28 @@ Examples:
 
 ### Step 1 — Resolve paths
 
-Load environment variables:
+Check that `OBSIDIAN_TEAMS_PATH` is set:
 ```bash
-source ~/.obsidian_env
 echo "$OBSIDIAN_TEAMS_PATH"
 ```
 
 The **teams base path** is determined by the first non-empty source:
 
 1. Path from `$ARGUMENTS` (after removing `--dry-run` if present) — treated as the teams directory
-2. `$OBSIDIAN_TEAMS_PATH` from `~/.obsidian_env`
+2. `$OBSIDIAN_TEAMS_PATH` environment variable
 
-If neither is set, stop and tell the user to either pass a path as an argument (`/bonusly-sync /path/to/teams`) or add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.obsidian_env`.
+If neither is set, stop and tell the user to either pass a path as an argument (`/bonusly-sync /path/to/teams`) or add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.zshrc`.
 
 Verify the resolved path exists with `ls`. If it doesn't exist, stop and tell the user.
 
-### Step 2 — Load API token
+### Step 2 — Check API token
 
 Run:
 ```bash
-source ~/.bonusly_env
 echo "$BONUSLY_API_TOKEN" | head -c 8
 ```
 
-Confirm that `BONUSLY_API_TOKEN` is set (the echo should print something). If it's empty, stop and tell the user to create `~/.bonusly_env` with `export BONUSLY_API_TOKEN=your_token`.
+Confirm that `BONUSLY_API_TOKEN` is set (the echo should print something). If it's empty, stop and tell the user to add `export BONUSLY_API_TOKEN=your_token` to `~/.zshrc`.
 
 ### Step 3 — Calculate date range
 

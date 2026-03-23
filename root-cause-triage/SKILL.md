@@ -9,7 +9,7 @@ argument-hint: "[--dry-run]"
 
 Automate weekly triage of root cause tickets. The goal is to determine whether each ticket gives a **product manager enough context to understand the root issue and design a solution** — not just whether a template was filled in.
 
-Uses `TRIAGE_BOARD_ID` and `TRIAGE_PARENT_ISSUE_KEY` from `~/.sprint_summary_env` to identify the board and parent epic.
+Uses `TRIAGE_BOARD_ID` and `TRIAGE_PARENT_ISSUE_KEY` environment variables to identify the board and parent epic.
 
 ## Board Columns
 
@@ -17,7 +17,7 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 
 ## Architecture
 
-This skill uses **three Python files** in the skill directory: `jira_client.py` (shared Jira API utilities), `fetch.py` (data fetching and analysis), and `triage.py` (transition execution). All read credentials from `~/.sprint_summary_env` via the shared `load_env` function.
+This skill uses **three Python files** in the skill directory: `jira_client.py` (shared Jira API utilities), `fetch.py` (data fetching and analysis), and `triage.py` (transition execution). All read credentials from the shell environment via the shared `load_env` function.
 
 ### Data flow
 
@@ -34,8 +34,7 @@ This skill uses **three Python files** in the skill directory: `jira_client.py` 
 | `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_search_all` |
 | `fetch.py` | Jira data fetch, duplicate/recurrence detection, completeness scoring |
 | `triage.py` | Transition execution, comment posting, history writing |
-| `~/.sprint_summary_env` | Jira credentials + `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY` |
-| `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH` — only needed for `--dry-run` |
+| `~/.zshrc` | All env vars: Jira credentials, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, `OBSIDIAN_VAULT_PATH` |
 | `/tmp/triage_issues.json` | fetch.py output — issue data + signals passed to agent |
 | `/tmp/triage_actions.json` | Confirmed actions written by Claude, read by triage.py |
 | `triage_history.json` | Persistent log of past decisions (90-day rolling window) |
@@ -57,14 +56,12 @@ Board: {TRIAGE_BOARD_ID} (Root Cause Triage)
 Epic: {TRIAGE_PARENT_ISSUE_KEY}
 ```
 
-**If `--dry-run` is set**, also load the Obsidian vault path:
+**If `--dry-run` is set**, also check the Obsidian vault path:
 ```bash
-source ~/.obsidian_env
-OBSIDIAN_VAULT_PATH=$(eval echo "$OBSIDIAN_VAULT_PATH")
 echo "Vault: $OBSIDIAN_VAULT_PATH"
 ```
 
-`OBSIDIAN_VAULT_PATH` must be set. If missing, stop and tell the user to add it to `~/.obsidian_env`.
+`OBSIDIAN_VAULT_PATH` must be set. If missing, stop and tell the user to add it to `~/.zshrc`.
 
 ### Step 2 — Run fetch.py
 

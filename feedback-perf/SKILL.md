@@ -19,15 +19,14 @@ Capture performance feedback for team members into their review cycle documents 
 
 ### Step 0 — Resolve paths
 
-Load environment variables:
+Check that `OBSIDIAN_TEAMS_PATH` is set:
 ```bash
-source ~/.obsidian_env
 echo "$OBSIDIAN_TEAMS_PATH"
 ```
 
 The **teams base path** is `$OBSIDIAN_TEAMS_PATH` — the directory containing team/person subdirectories.
 
-If not set, stop and tell the user to add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.obsidian_env`.
+If not set, stop and tell the user to add `export OBSIDIAN_TEAMS_PATH=/path/to/vault/Teams` to `~/.zshrc`.
 
 Verify the resolved path exists with `ls`.
 

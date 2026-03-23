@@ -45,17 +45,28 @@ Each skill lives in its own directory with a `SKILL.md` file:
 
 - **One directory per skill** — skill name matches directory name
 - **SKILL.md defines the skill** — skills are prompt-driven; some also include Python scripts for API calls and data processing
-- **Secrets in env files** — API tokens and credentials go in `~/.bonusly_env` (or similar), never in the repo
+- **Secrets in `~/.zshrc`** — API tokens and credentials are exported in `~/.zshrc`, never in the repo
 - **Use `--dry-run`** — skills that write files should support a dry-run flag for safe testing
 - **No real names in skill files** — use placeholder names in examples within SKILL.md
 - **Sandbox-safe commands** — consolidate API calls and data processing into permanent Python scripts in the skill directory. Each skill with API calls has its own `*_client.py` (API utilities) and processing scripts. Use `urllib.request` inside Python instead of curl to avoid sandbox approval prompts. Never use the Write/Edit tool for `/tmp/` files (triggers "outside working directory" prompts). Never use inline `python3 -c` with complex quoting (triggers "obfuscation" warnings).
 - **Avoid MCP for large payloads** — MCP tool responses load fully into conversation context. For endpoints that return large payloads (e.g., Jira issue changelogs), process in Python scripts instead. This prevents context exhaustion and forced compaction.
 - **Keep context lean** — skills that make many API calls should process data in Python scripts that save results to `/tmp/*.json` files. Only print summaries to stdout. The markdown generation step reads from these files rather than keeping raw API data in context.
 
-## Environment Files
+## Environment Variables
 
-| File | Contents |
-|------|----------|
-| `~/.obsidian_env` | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH` — shared by all vault-related skills |
-| `~/.bonusly_env` | `BONUSLY_API_TOKEN` |
-| `~/.sprint_summary_env` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `SPRINT_TEAMS`, `GITLAB_URL`, `GITLAB_TOKEN`, `GITLAB_PROJECT_ID`, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY` — Jira/GitLab credentials, team config, and triage board settings |
+All environment variables are exported in `~/.zshrc`. Python scripts access them via `os.environ.get()`.
+
+| Variable | Used by |
+|----------|---------|
+| `OBSIDIAN_VAULT_PATH` | root-cause-triage, retro-summary |
+| `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary |
+| `BONUSLY_API_TOKEN` | bonusly-sync |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, root-cause-triage |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, root-cause-triage |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, root-cause-triage |
+| `SPRINT_TEAMS` | sprint-summary, sprint-metrics |
+| `GITLAB_URL` | sprint-metrics |
+| `GITLAB_TOKEN` | sprint-metrics |
+| `GITLAB_PROJECT_ID` | sprint-metrics |
+| `TRIAGE_BOARD_ID` | root-cause-triage |
+| `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |

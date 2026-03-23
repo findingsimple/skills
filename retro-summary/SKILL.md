@@ -40,16 +40,13 @@ Examples:
 
 ### Step 1 — Load environment
 
-Load environment variables (note: values may contain `$HOME` which needs expansion):
+Check that the required environment variables are set:
 ```bash
-source ~/.obsidian_env
-OBSIDIAN_VAULT_PATH=$(eval echo "$OBSIDIAN_VAULT_PATH")
-OBSIDIAN_TEAMS_PATH=$(eval echo "$OBSIDIAN_TEAMS_PATH")
 echo "VAULT: $OBSIDIAN_VAULT_PATH"
 echo "TEAMS: $OBSIDIAN_TEAMS_PATH"
 ```
 
-Both `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH` must be set. If either is missing, stop and tell the user to add them to `~/.obsidian_env`.
+Both `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH` must be set. If either is missing, stop and tell the user to add them to `~/.zshrc`.
 
 Verify the teams path exists with `ls`. If it doesn't exist, stop and tell the user.
 
