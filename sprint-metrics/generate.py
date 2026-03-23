@@ -105,7 +105,7 @@ def main():
     args = parse_args()
     env = load_env([
         "JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
-        "OBSIDIAN_TEAMS_PATH",
+        "OBSIDIAN_TEAMS_PATH", "SPRINT_TEAMS",
         "GITLAB_URL", "GITLAB_TOKEN", "GITLAB_PROJECT_ID",
     ])
 
