@@ -144,15 +144,58 @@ def analyze_description(description):
     return results, missing
 
 
-def comparison_text(summary, description):
-    """Combine summary with key sections for similarity comparison."""
+def strip_placeholders(text):
+    """Remove placeholder/template content, returning only real substance."""
+    if not text:
+        return ""
+    # Remove placeholder patterns
+    cleaned = text
+    for pp in PLACEHOLDER_PATTERNS:
+        cleaned = re.sub(pp, "", cleaned, flags=re.IGNORECASE)
+    # Remove template section headers (emoji + title patterns)
+    cleaned = re.sub(r"[^\w\s]*\s*(Background Context|Steps to reproduce|Actual Results|Expected Results|Analysis|User Story|Acceptance Criteria|Release flag)\s*", "", cleaned, flags=re.IGNORECASE)
+    # Remove leftover whitespace/dashes
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def extract_linked_summaries(issue):
+    """Extract summaries from linked issues to use as comparison signal."""
+    linked = issue.get("linked_issues", {})
+    if not isinstance(linked, dict):
+        return ""
+    parts = []
+    for group_label, items in linked.items():
+        if isinstance(items, list):
+            for item in items:
+                summary = item.get("summary", "")
+                if summary:
+                    parts.append(summary)
+    # Cap to first 10 linked summaries to keep comparison bounded
+    return " ".join(parts[:10])
+
+
+def comparison_text(summary, description, issue=None):
+    """Build comparison text from meaningful content only.
+
+    Uses issue title + cleaned description (placeholders stripped) +
+    linked issue summaries. When descriptions are empty/template-only,
+    comparison falls back to title + linked issue context.
+    """
     parts = [summary]
-    for section in ("Background Context", "Steps to reproduce"):
-        excerpt = extract_section(description or "", section)
-        if excerpt:
-            parts.append(excerpt)
-    if not parts[1:] and description:
-        parts.append(description[:400])
+
+    # Add description content only if it has real substance after stripping placeholders
+    if description:
+        cleaned_desc = strip_placeholders(description)
+        if len(cleaned_desc) > 20:  # meaningful content threshold
+            parts.append(cleaned_desc[:400])
+
+    # Add linked issue summaries as signal
+    if issue:
+        linked_text = extract_linked_summaries(issue)
+        if linked_text:
+            parts.append(linked_text)
+
     return " ".join(parts)
 
 
@@ -169,8 +212,12 @@ def jaccard(a, b):
 
 
 def find_duplicates(issue, all_issues):
-    """Find duplicate and recurrence candidates from the full knowledge base."""
-    tokens = tokenize(comparison_text(issue["summary"], issue["description"]))
+    """Find duplicate and recurrence candidates from the full knowledge base.
+
+    Compares using title + cleaned description + linked issue summaries.
+    This avoids false matches from shared empty template text.
+    """
+    tokens = tokenize(comparison_text(issue["summary"], issue.get("description", ""), issue))
     best_open_key, best_open_score = None, 0.0
     best_closed_key, best_closed_score = None, 0.0
 
@@ -179,7 +226,7 @@ def find_duplicates(issue, all_issues):
             continue
 
         is_closed = candidate["status"].lower() in CLOSED_STATUSES
-        candidate_tokens = tokenize(comparison_text(candidate["summary"], candidate["description"]))
+        candidate_tokens = tokenize(comparison_text(candidate["summary"], candidate.get("description", ""), candidate))
         score = jaccard(tokens, candidate_tokens)
 
         if is_closed:
