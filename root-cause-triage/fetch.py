@@ -5,7 +5,7 @@ import json
 import re
 import sys
 
-from jira_client import load_env, init_auth, jira_get, jira_search_all
+from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text
 
 
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "TRIAGE_BOARD_ID", "TRIAGE_PARENT_ISSUE_KEY"]
@@ -75,10 +75,11 @@ def fetch_subtask_descriptions(base_url, auth, subtasks):
         if not key:
             continue
         try:
-            data = jira_get(base_url, "/rest/api/2/issue/%s?fields=summary,description" % key, auth)
+            data = jira_get(base_url, "/rest/api/3/issue/%s?fields=summary,description" % key, auth)
             fields = data.get("fields", {})
             sub_summary = fields.get("summary", "")
-            sub_desc = fields.get("description") or ""
+            raw_desc = fields.get("description")
+            sub_desc = adf_to_text(raw_desc) if isinstance(raw_desc, dict) else (raw_desc or "")
             if sub_desc.strip():
                 parts.append("[Subtask %s — %s]\n%s" % (key, sub_summary, sub_desc.strip()))
         except Exception as e:
@@ -107,12 +108,17 @@ def extract_section(text, section_name):
     """Extract content of a named section from a description, up to 400 chars."""
     if not text:
         return ""
-    pattern = r"(?i)(?:^|\n)\s*(?:h\d\.\s*|\*+\s*|#+\s*)?" + re.escape(section_name)
+    # Match section name preceded by optional markup (h1., *, #) and/or emoji prefix
+    pattern = r"(?i)(?:^|\n)\s*(?:h\d\.\s*|\*+\s*|#+\s*)?(?:\S+\s+)?" + re.escape(section_name)
     match = re.search(pattern, text)
     if not match:
         return ""
     start = match.end()
-    next_header = re.search(r"\n\s*(?:h\d\.\s*|\*+\s*|#+\s*)\S", text[start:])
+    # Next header: traditional markup OR a blank line followed by emoji+word (section header)
+    next_header = re.search(
+        r"\n\s*(?:h\d\.\s*|\*+\s*|#+\s*)\S|\n\n\s*\S+\s+[A-Z]",
+        text[start:],
+    )
     content = text[start:start + next_header.start()] if next_header else text[start:]
     return content.strip()[:400]
 
@@ -266,6 +272,11 @@ def main():
     print("Fetching all sibling issues for duplicate detection...", file=sys.stderr)
     all_siblings = fetch_all_sibling_issues(base_url, auth, parent_issue_key)
     triage_keys = {i["key"] for i in issues}
+    # Convert ADF descriptions to plain text for sibling issues
+    for sib in all_siblings:
+        raw = sib.get("fields", {}).get("description")
+        if isinstance(raw, dict):
+            sib["fields"]["description"] = adf_to_text(raw)
     print("Found %d total sibling issues\n" % len(all_siblings), file=sys.stderr)
 
     # Step 3: Analyze each issue
@@ -274,8 +285,10 @@ def main():
         key = issue["key"]
         fields = issue.get("fields", {})
         summary = fields.get("summary", "")
-        description = fields.get("description", "")
+        raw_desc = fields.get("description")
+        description = adf_to_text(raw_desc) if isinstance(raw_desc, dict) else (raw_desc or "")
         status_name = fields.get("status", {}).get("name", "")
+        issue_type = fields.get("issuetype", {}).get("name", "")
         created = (fields.get("created") or "")[:10]
 
         # Augment thin descriptions with subtask content
@@ -315,6 +328,7 @@ def main():
             "description": augmented_description,
             "has_subtasks": len(subtasks) > 0,
             "status": status_name,
+            "issue_type": issue_type,
             "created": created,
             "filled_count": filled_count,
             "total_sections": len(TEMPLATE_SECTIONS),
@@ -329,8 +343,8 @@ def main():
         })
 
     # Step 4: Output summary table
-    print("| # | Key | Summary | Score | Missing | Recommendation | Signals |")
-    print("|---|-----|---------|-------|---------|----------------|---------|")
+    print("| # | Key | Type | Summary | Score | Missing | Recommendation | Signals |")
+    print("|---|-----|------|---------|-------|---------|----------------|---------|")
     for i, r in enumerate(results, 1):
         summary_short = r["summary"][:50] + ("..." if len(r["summary"]) > 50 else "")
         missing_str = ", ".join(r["missing_sections"]) if r["missing_sections"] else "None"
@@ -347,8 +361,8 @@ def main():
         if r.get("has_subtasks"):
             signals.append("has subtasks")
         signals_str = ", ".join(signals) if signals else ""
-        print("| %d | %s | %s | %d/%d | %s | %s | %s |" % (
-            i, r["key"], summary_short, r["filled_count"], r["total_sections"],
+        print("| %d | %s | %s | %s | %d/%d | %s | %s | %s |" % (
+            i, r["key"], r.get("issue_type", ""), summary_short, r["filled_count"], r["total_sections"],
             missing_str, rec_display, signals_str,
         ))
 

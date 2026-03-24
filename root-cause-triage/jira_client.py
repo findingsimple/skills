@@ -74,6 +74,44 @@ def jira_post(base_url, path, auth, data):
         raise Exception("Jira API %d on POST %s: %s" % (e.code, path, body)) from None
 
 
+def adf_to_text(node):
+    """Convert an Atlassian Document Format (ADF) node to plain text.
+
+    ADF is the JSON document format returned by Jira API v3 for rich text fields.
+    This recursively walks the node tree and extracts text content.
+    """
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return node
+
+    if not isinstance(node, dict):
+        return ""
+
+    node_type = node.get("type", "")
+    text = node.get("text", "")
+
+    if text:
+        return text
+
+    parts = []
+    for child in node.get("content", []):
+        parts.append(adf_to_text(child))
+
+    joined = "".join(parts)
+
+    if node_type in ("paragraph", "heading", "blockquote", "rule"):
+        return joined.strip() + "\n\n"
+    if node_type == "hardBreak":
+        return "\n"
+    if node_type == "listItem":
+        return "- " + joined.strip() + "\n"
+    if node_type in ("bulletList", "orderedList"):
+        return joined + "\n"
+
+    return joined
+
+
 def jira_search_all(base_url, auth, jql, fields):
     """Run a JQL search with automatic pagination. Returns all matching issues.
 
@@ -84,7 +122,7 @@ def jira_search_all(base_url, auth, jql, fields):
         fields: comma-separated field names
     """
     encoded_jql = urllib.parse.quote(jql, safe="")
-    path = "/rest/api/2/search?jql=%s&maxResults=50&fields=%s" % (encoded_jql, fields)
+    path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s" % (encoded_jql, fields)
     data = jira_get(base_url, path, auth)
 
     issues = data.get("issues", [])
@@ -92,7 +130,7 @@ def jira_search_all(base_url, auth, jql, fields):
 
     while len(issues) < total:
         before = len(issues)
-        next_path = "/rest/api/2/search?jql=%s&maxResults=50&startAt=%d&fields=%s" % (
+        next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&startAt=%d&fields=%s" % (
             encoded_jql, len(issues), fields
         )
         next_data = jira_get(base_url, next_path, auth)

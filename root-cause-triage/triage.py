@@ -15,9 +15,9 @@ from jira_client import load_env, init_auth, jira_get, jira_post
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"]
 
 TRANSITION_NAMES = {
-    "ready": "Ready for Development",
-    "more_info": "More Info Required",
-    "duplicate": "Rejected",
+    "ready": "Story Ready",
+    "more_info": "On Hold",
+    "duplicate": "Cancel Story",
 }
 
 
@@ -105,36 +105,49 @@ def execute_transition(base_url, auth, issue_key, transition_id):
     })
 
 
-def add_duplicate_comment(base_url, auth, issue_key, duplicate_of):
-    """Add a comment noting the issue was rejected as a duplicate (v2 API)."""
-    body = (
-        "This ticket was triaged and flagged as a likely duplicate of *%s*.\n\n"
-        "Please review both tickets. If this is not a duplicate, move it back to *To Triage* with a comment explaining the difference."
-    ) % duplicate_of
+def text_to_adf(*paragraphs):
+    """Convert plain text paragraphs to a minimal ADF document."""
+    content = []
+    for text in paragraphs:
+        content.append({
+            "type": "paragraph",
+            "content": [{"type": "text", "text": text}],
+        })
+    return {"type": "doc", "version": 1, "content": content}
 
-    jira_post(base_url, "/rest/api/2/issue/%s/comment" % issue_key, auth, {
+
+def add_duplicate_comment(base_url, auth, issue_key, duplicate_of):
+    """Add a comment noting the issue was rejected as a duplicate."""
+    body = text_to_adf(
+        "This ticket was triaged and flagged as a likely duplicate of %s." % duplicate_of,
+        "Please review both tickets. If this is not a duplicate, move it back to To Triage with a comment explaining the difference.",
+    )
+
+    jira_post(base_url, "/rest/api/3/issue/%s/comment" % issue_key, auth, {
         "body": body,
     })
 
 
 def add_comment(base_url, auth, issue_key, missing_sections, quality_note=None):
-    """Add a wiki-markup comment listing missing sections or quality note (v2 API)."""
-    body = (
-        "This ticket was reviewed during triage but needs more detail before it can move to development.\n\n"
-        "To progress, the description should clearly explain:\n"
-        "* *What the root cause is* — not just the symptom, but what underlying issue caused the behaviour\n"
-        "* *Why it matters* — enough context for a product manager to understand the impact and scope a solution\n\n"
-    )
+    """Add an ADF comment listing missing sections or quality note."""
+    paragraphs = [
+        "This ticket was reviewed during triage but needs more detail before it can move to development.",
+        "To progress, the description should clearly explain:",
+        "- What the root cause is — not just the symptom, but what underlying issue caused the behaviour",
+        "- Why it matters — enough context for a product manager to understand the impact and scope a solution",
+    ]
 
     if missing_sections:
-        section_list = "\n".join("* %s" % s for s in missing_sections)
-        body += "The following template sections appear to be missing or incomplete:\n%s\n\n" % section_list
+        section_list = ", ".join(missing_sections)
+        paragraphs.append("The following template sections appear to be missing or incomplete: %s" % section_list)
     elif quality_note:
-        body += "Triage note: %s\n\n" % quality_note
+        paragraphs.append("Triage note: %s" % quality_note)
 
-    body += "Please update the ticket with the missing details and move it back to *To Triage* when ready."
+    paragraphs.append("Please update the ticket with the missing details and move it back to To Triage when ready.")
 
-    jira_post(base_url, "/rest/api/2/issue/%s/comment" % issue_key, auth, {
+    body = text_to_adf(*paragraphs)
+
+    jira_post(base_url, "/rest/api/3/issue/%s/comment" % issue_key, auth, {
         "body": body,
     })
 
