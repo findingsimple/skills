@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 
-ENV_KEYS = ["TRIAGE_OUTPUT_PATH"]
+ENV_KEYS = ["TRIAGE_OUTPUT_PATH", "JIRA_BASE_URL"]
 
 TEMPLATE_SECTIONS = [
     "Background Context",
@@ -248,12 +248,21 @@ def count_support_links(issue):
     return count
 
 
+def jira_link(key, base_url):
+    """Return a Markdown hyperlink for a Jira issue key."""
+    if base_url:
+        return "[%s](%s/browse/%s)" % (key, base_url, key)
+    return key
+
+
 def main():
     args = parse_args()
     output_path = os.environ.get("TRIAGE_OUTPUT_PATH", "")
     if not output_path:
         print("ERROR: TRIAGE_OUTPUT_PATH not set")
         sys.exit(1)
+
+    base_url = os.environ.get("JIRA_BASE_URL", "")
 
     # Try loading from /tmp/triage_collect/ first (richer data), fall back to Obsidian
     issues_dir = os.path.join(output_path, "Issues")
@@ -410,15 +419,15 @@ def main():
         lines.append("### %s (%d)" % (rec_label, len(group)))
         lines.append("")
         for r in group:
-            lines.append("#### %s — %s" % (r["key"], r["summary"]))
+            lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
             lines.append("- **Status:** %s" % r["status"])
             lines.append("- **Score:** %d/%d" % (r["filled_count"], r["total_sections"]))
             if r["missing_sections"]:
                 lines.append("- **Missing:** %s" % ", ".join(r["missing_sections"]))
             if r.get("duplicate_of"):
-                lines.append("- **Duplicate of:** %s (%.0f%% match)" % (r["duplicate_of"], r["duplicate_score"] * 100))
+                lines.append("- **Duplicate of:** %s (%.0f%% match)" % (jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
             if r.get("recurrence_of"):
-                lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (r["recurrence_of"], r["recurrence_score"] * 100))
+                lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (jira_link(r["recurrence_of"], base_url), r["recurrence_score"] * 100))
             if r.get("linked_issue_count", 0) > 0:
                 lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
             lines.append("")
