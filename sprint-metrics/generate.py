@@ -91,7 +91,16 @@ def fmt_duration(seconds):
     return "%dm" % minutes
 
 
+def format_date_display(date_str):
+    try:
+        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        return dt.strftime("%-d %b %Y")
+    except Exception:
+        return date_str[:10]
+
+
 def median(values):
+
     if not values:
         return None
     s = sorted(values)
@@ -381,12 +390,6 @@ def main():
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def format_date_display(date_str):
-        try:
-            dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-            return dt.strftime("%-d %b %Y")
-        except Exception:
-            return date_str[:10]
 
     start_display = format_date_display(start_date)
     end_display = format_date_display(end_date)
