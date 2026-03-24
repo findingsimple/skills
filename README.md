@@ -14,7 +14,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
-| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — analyze completeness, recommend and execute transitions |
+| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — collect data, analyze quality/duplicates, or run full triage workflow |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
 ## Architecture Notes
@@ -129,15 +129,33 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 ### root-cause-triage
 
-Triage root cause tickets on a Jira board. Fetches issues in the "To Triage" column, analyzes description completeness against a template (Background Context, Steps to Reproduce, Actual/Expected Results, Analysis), recommends transitions, and executes confirmed actions.
+Three modes for working with root cause tickets on a Jira board:
 
+**Collect** — build a per-issue Obsidian knowledge base from Jira data (issues + linked issues with summarized descriptions):
 ```bash
-/root-cause-triage              # interactive triage
-/root-cause-triage --dry-run    # preview without making changes
+/root-cause-triage collect                    # fetch all issues, write Markdown to Obsidian
+/root-cause-triage collect --issue PDE-1234   # collect a single issue
+/root-cause-triage collect --status "To Triage" # filter by status
+/root-cause-triage collect --dry-run          # preview without writing
+/root-cause-triage collect --force            # overwrite existing files
+```
+
+**Analyze** — run analysis on collected data (informational, no Jira mutations):
+```bash
+/root-cause-triage analyze                    # analyze "To Triage" issues
+/root-cause-triage analyze --all-statuses     # analyze everything
+/root-cause-triage analyze --issue PDE-1234   # analyze a single issue
+/root-cause-triage analyze --output-json      # also write JSON to /tmp/
+```
+
+**Triage** — the original single-pass workflow (fetch, assess, transition):
+```bash
+/root-cause-triage triage                     # interactive triage
+/root-cause-triage triage --dry-run           # preview without making changes
 ```
 
 **Prerequisites:**
-- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `TRIAGE_BOARD_ID`, and `TRIAGE_PARENT_ISSUE_KEY` in `~/.zshrc`
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` in `~/.zshrc`
 
 ### sprint-metrics
 

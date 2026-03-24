@@ -115,6 +115,9 @@ def adf_to_text(node):
 def jira_search_all(base_url, auth, jql, fields):
     """Run a JQL search with automatic pagination. Returns all matching issues.
 
+    Supports both cursor-based pagination (nextPageToken/isLast, used by
+    Jira API v3 /search/jql) and offset-based pagination (total/startAt).
+
     Args:
         base_url: Jira base URL
         auth: base64 auth string
@@ -126,8 +129,24 @@ def jira_search_all(base_url, auth, jql, fields):
     data = jira_get(base_url, path, auth)
 
     issues = data.get("issues", [])
-    total = data.get("total", len(issues))
 
+    # Cursor-based pagination (v3 /search/jql endpoint)
+    if "nextPageToken" in data:
+        while not data.get("isLast", True):
+            token = data["nextPageToken"]
+            next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s&nextPageToken=%s" % (
+                encoded_jql, fields, urllib.parse.quote(token, safe=""),
+            )
+            data = jira_get(base_url, next_path, auth)
+            new_issues = data.get("issues", [])
+            if not new_issues:
+                print("WARNING: Cursor pagination returned empty page at %d issues, stopping" % len(issues), file=sys.stderr)
+                break
+            issues.extend(new_issues)
+        return issues
+
+    # Offset-based pagination (fallback for older endpoints)
+    total = data.get("total", len(issues))
     while len(issues) < total:
         before = len(issues)
         next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&startAt=%d&fields=%s" % (

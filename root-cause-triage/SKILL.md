@@ -1,15 +1,19 @@
 ---
 name: root-cause-triage
-description: Triage root cause tickets on the triage board — analyze completeness, recommend transitions, execute with user confirmation
+description: Triage root cause tickets — collect data to Obsidian knowledge base, analyze for duplicates/quality, or run the full triage workflow
 disable-model-invocation: true
-argument-hint: "[--dry-run]"
+argument-hint: "[collect|analyze|triage] [--issue KEY] [--status STATUS] [--dry-run] [--force]"
 ---
 
 # Root Cause Triage
 
-Automate weekly triage of root cause tickets. The goal is to determine whether each ticket gives a **product manager enough context to understand the root issue and design a solution** — not just whether a template was filled in.
+Three modes for working with root cause tickets under the triage board:
 
-Uses `TRIAGE_BOARD_ID` and `TRIAGE_PARENT_ISSUE_KEY` environment variables to identify the board and parent epic.
+- **collect** — fetch Jira data and build a per-issue Obsidian knowledge base
+- **analyze** — run analysis on collected data (informational, no Jira mutations)
+- **triage** — the original workflow: fetch, assess, transition (with user confirmation)
+
+Uses `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` environment variables.
 
 ## Board Columns
 
@@ -17,53 +21,159 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 
 ## Architecture
 
-This skill uses **three Python files** in the skill directory: `jira_client.py` (shared Jira API utilities), `fetch.py` (data fetching and analysis), and `triage.py` (transition execution). All read credentials from the shell environment via the shared `load_env` function.
-
-### Data flow
-
-1. `fetch.py` — discovers board column→status mapping; fetches "To Triage" issues with subtasks; augments thin descriptions with subtask content; checks Jira issue links for confirmed duplicates; runs Jaccard text similarity against all sibling issues (open → duplicate signal at ≥50%, closed → recurrence signal at ≥35%); scores template section completeness; outputs summary table + `/tmp/triage_issues.json`
-2. Claude loads `triage_history.json` (most recent 20 entries), then spawns an **Opus agent** to assess PM-actionability of each description — rates quality as good/thin/vague, flags placeholder/dummy text, and evaluates duplicate and recurrence signals. Descriptions are truncated to 800 chars; batches of 10 if >10 issues.
-3. Claude presents combined results to the user — completeness score, agent quality rating, duplicate/recurrence flags, and any fetch.py vs agent disagreements
-4. User confirms or overrides actions; Claude re-reads `/tmp/triage_issues.json` for field accuracy, then writes `/tmp/triage_actions.json` (includes `summary` and `quality_note` for history)
-5. `triage.py` — discovers transition IDs, executes transitions + adds comments in parallel; appends successful and partial actions to `~/.claude/skills/root-cause-triage/triage_history.json`
-
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_search_all` |
-| `fetch.py` | Jira data fetch, duplicate/recurrence detection, completeness scoring |
-| `triage.py` | Transition execution, comment posting, history writing |
-| `~/.zshrc` | All env vars: Jira credentials, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, `OBSIDIAN_VAULT_PATH` |
-| `/tmp/triage_issues.json` | fetch.py output — issue data + signals passed to agent |
-| `/tmp/triage_actions.json` | Confirmed actions written by Claude, read by triage.py |
-| `triage_history.json` | Persistent log of past decisions (90-day rolling window) |
+| `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_search_all`, `adf_to_text` |
+| `collect.py` | Mode: collect — fetch issues + linked issue details, save per-issue JSON to `/tmp/triage_collect/` |
+| `analyze.py` | Mode: analyze — read collected data, score completeness, detect duplicates, write Obsidian report |
+| `fetch.py` | Mode: triage — single-pass fetch + analysis for the triage workflow |
+| `triage.py` | Mode: triage — transition execution, comment posting, history writing |
 
 ## Instructions
 
-Follow these steps exactly.
+### Step 1 — Parse mode and arguments
 
-### Step 1 — Parse arguments
+Parse `$ARGUMENTS` to determine the mode:
 
-Parse `$ARGUMENTS` for optional parameters:
-
-1. **`--dry-run`** (optional) — preview analysis and planned transitions without executing any changes in Jira. Instead of executing, writes a summary markdown file to the Obsidian vault.
+- First positional argument: `collect`, `analyze`, or `triage`
+- If no mode specified, ask the user which mode to run
+- Remaining arguments are passed through to the relevant script
 
 Show the parsed values:
 ```
-Mode: {dry-run or live}
-Board: {TRIAGE_BOARD_ID} (Root Cause Triage)
+Mode: {collect|analyze|triage}
+Board: {TRIAGE_BOARD_ID}
 Epic: {TRIAGE_PARENT_ISSUE_KEY}
+Output: {TRIAGE_OUTPUT_PATH}
 ```
 
-**If `--dry-run` is set**, also check the output path:
+---
+
+## Mode: Collect
+
+Build a per-issue Obsidian knowledge base from Jira data. This is a two-step process:
+1. `collect.py` fetches all data from Jira and saves per-issue JSON to `/tmp/triage_collect/`
+2. Claude processes each issue's JSON one at a time, summarizes linked issue descriptions, and writes the final Markdown file to Obsidian
+
+### Step C1 — Run collect.py
+
 ```bash
-echo "Output: $TRIAGE_OUTPUT_PATH"
+python3 ~/.claude/skills/root-cause-triage/collect.py [--issue KEY] [--status STATUS] [--dry-run] [--force]
 ```
 
-`TRIAGE_OUTPUT_PATH` must be set. If missing, stop and tell the user to add it to `~/.zshrc`. This is the full directory path where triage summary files are written (e.g., a subdirectory within an Obsidian vault).
+Pass through any arguments from Step 1. If `collect.py` exits with a non-zero status, display the error and stop.
 
-### Step 2 — Run fetch.py
+If `--dry-run` was specified, show the output and stop — do not proceed to summarization.
+
+### Step C2 — Summarize and write Markdown files
+
+After `collect.py` completes, process each issue's JSON file in `/tmp/triage_collect/` one at a time.
+
+For each `{KEY}.json` file:
+
+1. Read the JSON file
+2. Check if a file matching `{TRIAGE_OUTPUT_PATH}/Issues/{KEY} — *.md` already exists — if so, skip unless `--force` was specified
+3. Summarize the issue data into a Markdown file with this format:
+
+**Filename:** `{KEY} — {summary sanitized for filesystem}.md` (replace `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|` with `-`; truncate to ~80 chars if very long)
+
+```markdown
+---
+key: {key}
+board_column: {board_column}
+status: {status}
+issue_type: {issue_type}
+priority: {priority}
+reporter: {reporter}
+created: {created}
+parent_epic: {TRIAGE_PARENT_ISSUE_KEY}
+collected_at: {collected_at}
+linked_issue_count: {linked_issue_count}
+---
+
+# [{key}]({JIRA_BASE_URL}/browse/{key}) — {summary}
+
+## Description
+
+{description text — full plain text including subtask content}
+
+## Linked Issues
+
+{For each link group (e.g., "duplicates", "relates to", "causes"):}
+
+### {Group Label} ({count})
+
+{For each linked issue in the group:}
+#### [{linked_key}]({JIRA_BASE_URL}/browse/{linked_key}) — {linked_summary} *({linked_issue_type})*
+- **Status:** {linked_status}
+{If description was fetched, summarize it in 3-5 sentences:}
+- **Summary:** {summary capturing the core problem, specific conditions/customers affected, what was required to resolve it, and how it connects to the root cause}
+{If no description was fetched:}
+- *(stub only — no description fetched)*
+```
+
+**Summarization guidelines for linked issue descriptions:**
+- Capture the core problem or observation described in the linked issue
+- Note specific conditions, affected customers/properties, PMS provider, and business IDs where mentioned
+- Explain what was required to resolve it (manual support intervention, configuration change, etc.)
+- Connect back to how this relates to the root cause — why does this linked issue exist because of the gap?
+- Keep it to 3-5 sentences — enough to understand the full context without reading the original ticket
+- If the description is very short or empty, just note that
+
+**Formatting conventions:**
+- All issue keys must be hyperlinked: `[KEY](JIRA_BASE_URL/browse/KEY)`
+- Filenames include the issue title: `{KEY} — {sanitized summary}.md`
+- For large "causes" groups (>10 items), write a paragraph summary instead of listing each stub
+
+4. Write the Markdown file to `{TRIAGE_OUTPUT_PATH}/Issues/{KEY}.md`
+
+After processing all issues, report:
+```
+Collection complete:
+- {n} Markdown files written to {TRIAGE_OUTPUT_PATH}/Issues/
+- {n} skipped (already existed)
+- Index updated at {TRIAGE_OUTPUT_PATH}/Issues/_index.md
+```
+
+---
+
+## Mode: Analyze
+
+Run analysis on the collected Obsidian knowledge base. Produces an informational report — no Jira mutations.
+
+### Step A1 — Run analyze.py
+
+```bash
+python3 ~/.claude/skills/root-cause-triage/analyze.py [--issue KEY] [--status STATUS] [--all-statuses] [--output-json]
+```
+
+This reads collected data (from `/tmp/triage_collect/` or Obsidian files), runs template completeness scoring and text-similarity duplicate detection against the full knowledge base, and writes an analysis report to `{TRIAGE_OUTPUT_PATH}/Analysis/`.
+
+### Step A2 — Present results
+
+Show the summary table from analyze.py output to the user. Highlight:
+- Issues flagged as potential duplicates (with similarity scores)
+- Issues with many linked support tickets (signal of real user impact)
+- Issues missing key template sections
+- Any grouping opportunities (issues that could be combined)
+
+This is informational — the user reviews the report in Obsidian and decides next steps.
+
+---
+
+## Mode: Triage
+
+The original single-pass workflow: fetch → assess → transition. Use this when you want to actually move issues between statuses on the board.
+
+### Step T1 — Parse arguments
+
+Parse `$ARGUMENTS` for optional parameters:
+
+1. **`--dry-run`** (optional) — preview analysis and planned transitions without executing any changes in Jira.
+
+### Step T2 — Run fetch.py
 
 ```bash
 python3 ~/.claude/skills/root-cause-triage/fetch.py
@@ -71,11 +181,11 @@ python3 ~/.claude/skills/root-cause-triage/fetch.py
 
 This discovers the board configuration, fetches issues in "To Triage" status, analyzes their descriptions, and outputs a summary table. Results are saved to `/tmp/triage_issues.json`.
 
-If `fetch.py` exits with a non-zero status, display the error output to the user and stop — do not proceed to the agent assessment step.
+If `fetch.py` exits with a non-zero status, display the error output to the user and stop.
 
-If no issues are found in "To Triage", inform the user and stop — nothing to triage.
+If no issues are found in "To Triage", inform the user and stop.
 
-### Step 3 — Agent quality assessment
+### Step T3 — Agent quality assessment
 
 Read `/tmp/triage_issues.json` and load recent triage history:
 
@@ -172,7 +282,7 @@ Parse the agent's JSON response. If the response is not valid JSON, attempt to e
 
 For each issue, merge the agent's `suggested_action` and quality notes with the `fetch.py` data. The agent's suggestion takes precedence over the regex recommendation where they differ, but always surface the conflict to the user.
 
-### Step 4 — User review
+### Step T4 — User review
 
 Present a consolidated table to the user combining fetch.py completeness data and agent quality assessment. For each issue show:
 - Issue key + summary (linked to Jira)
@@ -191,7 +301,7 @@ Then ask the user to review and confirm. The user may:
 
 Collect the final action list.
 
-### Step 5 — Execute transitions
+### Step T5 — Execute transitions
 
 Before writing the actions file, re-read `/tmp/triage_issues.json` to pull `missing_sections`, `duplicate_of`, `recurrence_of`, and `summary` for each confirmed action directly from the fetch.py output. Do not reconstruct these fields from memory.
 
@@ -218,7 +328,7 @@ python3 ~/.claude/skills/root-cause-triage/triage.py --actions-file /tmp/triage_
 
 Pass `--dry-run` if the user specified it in Step 1.
 
-### Step 6 — Report results
+### Step T6 — Report results
 
 **Live mode:** Show the user a summary of what was done:
 
