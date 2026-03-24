@@ -33,12 +33,12 @@ Each skill lives in its own directory with a `SKILL.md` file:
     triage.py           # Mode: triage — transition execution, comment posting, history writing
   sprint-metrics/
     SKILL.md
-    jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, gitlab_get)
+    jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, jira_search_all, gitlab_get)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches GitLab MR data, calculates metrics, writes markdown
   sprint-summary/
     SKILL.md
-    jira_client.py      # Jira API client (load_env, auth, jira_get)
+    jira_client.py      # Jira API client (load_env, auth, jira_get, jira_search_all)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches sprint report data, generates summary markdown
 ```

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import base64
 
@@ -62,3 +63,52 @@ def gitlab_get(gitlab_url, path, token):
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
         raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
+
+
+def jira_search_all(base_url, auth, jql, fields):
+    """Run a JQL search with automatic pagination. Returns all matching issues.
+
+    Supports both cursor-based pagination (nextPageToken/isLast, used by
+    Jira API v3 /search/jql) and offset-based pagination (total/startAt).
+
+    Args:
+        base_url: Jira base URL
+        auth: base64 auth string
+        jql: JQL query string (unencoded)
+        fields: comma-separated field names
+    """
+    encoded_jql = urllib.parse.quote(jql, safe="")
+    path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s" % (encoded_jql, fields)
+    data = jira_get(base_url, path, auth)
+
+    issues = data.get("issues", [])
+
+    # Cursor-based pagination (v3 /search/jql endpoint)
+    if "nextPageToken" in data:
+        while not data.get("isLast", True):
+            token = data["nextPageToken"]
+            next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s&nextPageToken=%s" % (
+                encoded_jql, fields, urllib.parse.quote(token, safe=""),
+            )
+            data = jira_get(base_url, next_path, auth)
+            new_issues = data.get("issues", [])
+            if not new_issues:
+                print("WARNING: Cursor pagination returned empty page at %d issues, stopping" % len(issues), file=sys.stderr)
+                break
+            issues.extend(new_issues)
+        return issues
+
+    # Offset-based pagination (fallback for older endpoints)
+    total = data.get("total", len(issues))
+    while len(issues) < total:
+        before = len(issues)
+        next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&startAt=%d&fields=%s" % (
+            encoded_jql, len(issues), fields
+        )
+        next_data = jira_get(base_url, next_path, auth)
+        issues.extend(next_data.get("issues", []))
+        if len(issues) == before:
+            print("WARNING: Pagination stalled at %d/%d issues, stopping" % (len(issues), total), file=sys.stderr)
+            break
+
+    return issues

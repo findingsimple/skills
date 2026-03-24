@@ -4,13 +4,12 @@
 import json
 import os
 import sys
-import urllib.parse
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from jira_client import load_env, init_auth, jira_get
+from jira_client import load_env, init_auth, jira_get, jira_search_all
 
 
 def parse_args():
@@ -113,31 +112,10 @@ def main():
     print("Fetching subtasks and support tickets...", file=sys.stderr)
 
     def fetch_subtasks():
-        """Fetch subtasks with parallel pagination after first page."""
+        """Fetch subtasks with automatic pagination."""
         jql = "sprint=%s AND issuetype in subtaskIssueTypes() ORDER BY parent,key" % sprint_id
-        encoded_jql = urllib.parse.quote(jql, safe="")
         fields = "summary,status,issuetype,assignee,priority,parent"
-
-        # First page to get total count
-        path = "/rest/api/3/search/jql?jql=%s&fields=%s&maxResults=50&startAt=0" % (encoded_jql, fields)
-        data = jira_get(base_url, path, auth)
-        results = data.get("issues", [])
-        total = data.get("total", 0)
-
-        if total > 50:
-            # Fire off remaining pages in parallel
-            offsets = list(range(50, total, 50))
-
-            def fetch_page(offset):
-                p = "/rest/api/3/search/jql?jql=%s&fields=%s&maxResults=50&startAt=%d" % (encoded_jql, fields, offset)
-                return jira_get(base_url, p, auth).get("issues", [])
-
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                futures = [pool.submit(fetch_page, o) for o in offsets]
-                for future in as_completed(futures):
-                    results.extend(future.result())
-
-        return results
+        return jira_search_all(base_url, auth, jql, fields)
 
     support_project_key = env.get("SUPPORT_PROJECT_KEY", "")
 
@@ -147,10 +125,7 @@ def main():
             return []
         try:
             jql = "sprint=%s AND project=%s ORDER BY priority DESC,status" % (sprint_id, support_project_key)
-            path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority&maxResults=50" % (
-                urllib.parse.quote(jql, safe=""),
-            )
-            return jira_get(base_url, path, auth).get("issues", [])
+            return jira_search_all(base_url, auth, jql, "summary,status,issuetype,assignee,priority")
         except Exception as e:
             print("Note: Could not fetch support tickets: %s" % e, file=sys.stderr)
             return []
