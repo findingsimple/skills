@@ -46,7 +46,7 @@ def parse_summary_file(path):
                 key, val = line.split(": ", 1)
                 frontmatter[key.strip()] = val.strip().strip('"')
 
-    # Extract issue keys from markdown links like [COPS-123](...)
+    # Extract issue keys from markdown links like [PROJ-123](...)
     issue_keys = []
     seen = set()
     for match in re.finditer(r'\[([A-Z]+-\d+)\]\(', content):

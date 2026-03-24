@@ -52,7 +52,7 @@ def format_date_display(date_str):
 
 def main():
     args = parse_args()
-    env = load_env(["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "OBSIDIAN_TEAMS_PATH"])
+    env = load_env(["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "OBSIDIAN_TEAMS_PATH", "SUPPORT_PROJECT_KEY"])
 
     base_url, auth = init_auth(env)
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
@@ -109,8 +109,8 @@ def main():
         if est and est.get("value") is not None:
             by_type[tn]["points"] += float(est["value"])
 
-    # Fetch subtasks and ECS tickets in parallel
-    print("Fetching subtasks and ECS tickets...", file=sys.stderr)
+    # Fetch subtasks and support tickets in parallel
+    print("Fetching subtasks and support tickets...", file=sys.stderr)
 
     def fetch_subtasks():
         """Fetch subtasks with parallel pagination after first page."""
@@ -139,23 +139,27 @@ def main():
 
         return results
 
-    def fetch_ecs():
-        """Fetch ECS support tickets."""
+    support_project_key = env.get("SUPPORT_PROJECT_KEY", "")
+
+    def fetch_support():
+        """Fetch support tickets from the configured support project."""
+        if not support_project_key:
+            return []
         try:
-            jql = "sprint=%s AND project=ECS ORDER BY priority DESC,status" % sprint_id
+            jql = "sprint=%s AND project=%s ORDER BY priority DESC,status" % (sprint_id, support_project_key)
             path = "/rest/api/3/search/jql?jql=%s&fields=summary,status,issuetype,assignee,priority&maxResults=50" % (
                 urllib.parse.quote(jql, safe=""),
             )
             return jira_get(base_url, path, auth).get("issues", [])
         except Exception as e:
-            print("Note: Could not fetch ECS tickets: %s" % e, file=sys.stderr)
+            print("Note: Could not fetch support tickets: %s" % e, file=sys.stderr)
             return []
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         f_subtasks = pool.submit(fetch_subtasks)
-        f_ecs = pool.submit(fetch_ecs)
+        f_support = pool.submit(fetch_support)
         subtasks = f_subtasks.result()
-        ecs_issues = f_ecs.result()
+        support_issues = f_support.result()
 
     subtask_map = defaultdict(list)
     for st in subtasks:
@@ -279,13 +283,13 @@ def main():
                 )
 
     # Support
-    if ecs_issues:
+    if support_issues:
         lines.append("")
         lines.append("## Support")
         lines.append("")
         lines.append("| Key | Type | Summary | Status | Priority | Assignee |")
         lines.append("|-----|------|---------|--------|----------|----------|")
-        for issue in ecs_issues:
+        for issue in support_issues:
             f = issue.get("fields", {})
             key = issue["key"]
             itype = f.get("issuetype", {}).get("name", "")

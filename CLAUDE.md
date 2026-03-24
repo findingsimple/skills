@@ -47,7 +47,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
 - **SKILL.md defines the skill** — skills are prompt-driven; some also include Python scripts for API calls and data processing
 - **Secrets in `~/.zshrc`** — API tokens and credentials are exported in `~/.zshrc`, never in the repo
 - **Use `--dry-run`** — skills that write files should support a dry-run flag for safe testing
-- **No real names in skill files** — use placeholder names in examples within SKILL.md
+- **No PII or business-specific info in skill files** — use placeholder names (e.g., Alex Chen, Jordan Park) and generic identifiers (e.g., `PROJ-123`, `TeamA`) in SKILL.md examples. Never hardcode real project keys, team names, board names, or company-specific identifiers in code or examples — parameterize via environment variables instead
 - **Sandbox-safe commands** — consolidate API calls and data processing into permanent Python scripts in the skill directory. Each skill with API calls has its own `*_client.py` (API utilities) and processing scripts. Use `urllib.request` inside Python instead of curl to avoid sandbox approval prompts. Never use the Write/Edit tool for `/tmp/` files (triggers "outside working directory" prompts). Never use inline `python3 -c` with complex quoting (triggers "obfuscation" warnings).
 - **Avoid MCP for large payloads** — MCP tool responses load fully into conversation context. For endpoints that return large payloads (e.g., Jira issue changelogs), process in Python scripts instead. This prevents context exhaustion and forced compaction.
 - **Keep context lean** — skills that make many API calls should process data in Python scripts that save results to `/tmp/*.json` files. Only print summaries to stdout. The markdown generation step reads from these files rather than keeping raw API data in context.
@@ -60,7 +60,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 
 | Variable | Used by |
 |----------|---------|
-| `OBSIDIAN_VAULT_PATH` | root-cause-triage, retro-summary |
+| `OBSIDIAN_VAULT_PATH` | retro-summary |
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
 | `JIRA_BASE_URL` | sprint-summary, sprint-metrics, root-cause-triage |
@@ -72,3 +72,5 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `GITLAB_PROJECT_ID` | sprint-metrics |
 | `TRIAGE_BOARD_ID` | root-cause-triage |
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
+| `TRIAGE_OUTPUT_PATH` | root-cause-triage |
+| `SUPPORT_PROJECT_KEY` | sprint-summary |

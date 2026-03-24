@@ -30,7 +30,7 @@ This skill uses **two Python scripts** (`setup.py` and `generate.py`) in the ski
 
 ### How MRs are linked to sprint issues
 
-For each Jira issue key in the sprint, the script searches GitLab MRs where the key appears in the title, description, or source branch name. This relies on the team convention of including the Jira key in branch names (e.g., `COPS-123-fix-widget`).
+For each Jira issue key in the sprint, the script searches GitLab MRs where the key appears in the title, description, or source branch name. This relies on the team convention of including the Jira key in branch names (e.g., `PROJ-123-fix-widget`).
 
 ## Instructions
 
@@ -40,8 +40,8 @@ Follow these steps exactly. The skill requires **only 2 bash commands** (2 pytho
 
 Parse `$ARGUMENTS` for optional parameters:
 
-1. **Sprint name** (optional) — a quoted or unquoted sprint name (e.g., `"COPS Sprint 2026 4"`).
-2. **`--team <name>`** (optional) — filter to a single team by its vault directory name (e.g., `--team COPS`).
+1. **Sprint name** (optional) — a quoted or unquoted sprint name (e.g., `"PROJ Sprint 2026 4"`).
+2. **`--team <name>`** (optional) — filter to a single team by its vault directory name (e.g., `--team TeamA`).
 3. **`--dry-run`** (optional) — preview output without writing any files.
 
 If no arguments are provided, default to: latest completed sprint, all teams.

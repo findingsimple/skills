@@ -1,6 +1,6 @@
 ---
 name: root-cause-triage
-description: Triage root cause tickets on the PDE board — analyze completeness, recommend transitions, execute with user confirmation
+description: Triage root cause tickets on the triage board — analyze completeness, recommend transitions, execute with user confirmation
 disable-model-invocation: true
 argument-hint: "[--dry-run]"
 ---
@@ -56,12 +56,12 @@ Board: {TRIAGE_BOARD_ID} (Root Cause Triage)
 Epic: {TRIAGE_PARENT_ISSUE_KEY}
 ```
 
-**If `--dry-run` is set**, also check the Obsidian vault path:
+**If `--dry-run` is set**, also check the output path:
 ```bash
-echo "Vault: $OBSIDIAN_VAULT_PATH"
+echo "Output: $TRIAGE_OUTPUT_PATH"
 ```
 
-`OBSIDIAN_VAULT_PATH` must be set. If missing, stop and tell the user to add it to `~/.zshrc`.
+`TRIAGE_OUTPUT_PATH` must be set. If missing, stop and tell the user to add it to `~/.zshrc`. This is the full directory path where triage summary files are written (e.g., a subdirectory within an Obsidian vault).
 
 ### Step 2 — Run fetch.py
 
@@ -237,11 +237,11 @@ If any transitions failed or were partial, tell the user they can re-run the ski
 
 **Dry-run mode:** Write a markdown summary file to the vault instead.
 
-Output path: `{OBSIDIAN_VAULT_PATH}/Root Cause Triage/Triage - {YYYY-MM-DD}.md`
+Output path: `{TRIAGE_OUTPUT_PATH}/Triage - {YYYY-MM-DD}.md`
 
 Create the directory if needed:
 ```bash
-mkdir -p "{OBSIDIAN_VAULT_PATH}/Root Cause Triage"
+mkdir -p "{TRIAGE_OUTPUT_PATH}"
 ```
 
 Use the Write tool to create the file with this structure:

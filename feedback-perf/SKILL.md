@@ -41,7 +41,7 @@ Scan the vault for person profile notes. Use Glob to find markdown files:
 A valid profile file must:
 - Have YAML frontmatter (delimited by `---`)
 - Not be inside a `Feedback/`, `1:1s/`, `Logs/`, or `Me/` subdirectory
-- Have a `team` value that is either empty or a **single team name** (e.g., `"ACE"` or `"COPS"` — skip comma-separated values like `"ACE, COPS"` which indicate a manager, not a team member)
+- Have a `team` value that is either empty or a **single team name** (e.g., `"TeamA"` or `"TeamB"` — skip comma-separated values like `"TeamA, TeamB"` which indicate a manager, not a team member)
 
 For each valid profile file, extract:
 - **name**: the parent directory name (the person's full name)

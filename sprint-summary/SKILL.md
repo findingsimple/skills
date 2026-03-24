@@ -17,7 +17,7 @@ This skill uses **two Python scripts** (`setup.py` and `generate.py`) in the ski
 
 1. **Jira Agile REST API** — sprint metadata: board discovery, sprint listing, sprint goals, and sprint dates. The Atlassian MCP tools do not expose these endpoints.
 2. **Jira Greenhopper Sprint Report API** — point-in-time sprint data: parent issues with frozen statuses at sprint close, pre-calculated point sums, punted (removed) issues, and scope change tracking.
-3. **Jira REST API v3** — subtask and ECS support ticket queries.
+3. **Jira REST API v3** — subtask and support ticket queries (project key from `SUPPORT_PROJECT_KEY` env var).
 
 ### Key principles
 
@@ -33,8 +33,8 @@ Follow these steps exactly. The entire skill should require **only 2 bash comman
 
 Parse `$ARGUMENTS` for optional parameters:
 
-1. **Sprint name** (optional) — a quoted or unquoted sprint name (e.g., `"COPS Sprint 2026 4"`).
-2. **`--team <name>`** (optional) — filter to a single team by its vault directory name (e.g., `--team ACE`).
+1. **Sprint name** (optional) — a quoted or unquoted sprint name (e.g., `"PROJ Sprint 2026 4"`).
+2. **`--team <name>`** (optional) — filter to a single team by its vault directory name (e.g., `--team TeamA`).
 3. **`--dry-run`** (optional) — preview output without writing any files.
 
 If no arguments are provided, default to: latest completed sprint, all teams.
@@ -94,7 +94,7 @@ Only use `AskUserQuestion` if **no goal** was found.
 python3 ~/.claude/skills/sprint-summary/generate.py --sprint-id {ID} --sprint-name "{NAME}" --start-date "{DATE}" --end-date "{DATE}" --goal "{GOAL}" --board-id {ID} --team-vault-dir "{DIR}" --team-project-key "{KEY}" --team-display-name "{NAME}" [--dry-run]
 ```
 
-The script fetches sprint report data, subtasks, and ECS tickets, calculates metrics, generates markdown, and writes to the Obsidian vault.
+The script fetches sprint report data, subtasks, and support tickets, calculates metrics, generates markdown, and writes to the Obsidian vault.
 
 **Output path:** `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - {end_date}.md`
 

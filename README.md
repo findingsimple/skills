@@ -145,9 +145,9 @@ Generate engineering metrics from GitLab merge requests linked to Jira sprint is
 
 ```bash
 /sprint-metrics                          # prompts for team and sprint
-/sprint-metrics --team COPS              # skip team prompt
+/sprint-metrics --team TeamA              # skip team prompt
 /sprint-metrics "Sprint 2026 4"          # specific sprint by name
-/sprint-metrics --team COPS --dry-run    # preview without writing
+/sprint-metrics --team TeamA --dry-run    # preview without writing
 ```
 
 **Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR.
@@ -162,9 +162,9 @@ Pull Jira sprint data (issues, story points, goals, dates) for configured teams 
 
 ```bash
 /sprint-summary                          # prompts for team, then shows recent closed sprints
-/sprint-summary --team COPS              # skip team prompt
+/sprint-summary --team TeamA              # skip team prompt
 /sprint-summary "Sprint 2026 4"          # specific sprint by name (skip sprint prompt)
-/sprint-summary --team COPS --dry-run    # preview without writing
+/sprint-summary --team TeamA --dry-run    # preview without writing
 ```
 
 Generates one team per run to keep context usage low. Run again for additional teams.
