@@ -24,7 +24,7 @@ PLACEHOLDER_PATTERNS = [
     r"\{[^}]+\}",        # {placeholder text}
     r"TBD",
     r"TODO",
-    r"N/?A",
+    r"\bN/?A\b",
     r"^\s*-?\s*$",       # empty or just a dash
 ]
 

@@ -124,7 +124,7 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 **Prerequisites:**
 - `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_TEAMS_PATH` in `~/.zshrc`
-- A FigJam board using Rose/Thorn/Bud retro format with section-based layout
+- A FigJam board using Rose/Thorn/Bud or Wind/Sun/Anchor/Reef retro format with section-based layout
 - Figma MCP server connected in Claude Code
 
 ### root-cause-triage
