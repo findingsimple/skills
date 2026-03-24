@@ -106,6 +106,8 @@ Use this as a rough calibration signal for consistency — if a new ticket resem
 
 The bar is not technical completeness. The bar is: *could a PM read this and know what went wrong, why it matters, and what needs to be fixed?*
 
+Some tickets may not contain much detail but from the title e.g. "No UI for bulk updating unit details" it is clear enough what the issue is e.g. product/functionality gap.
+
 Tickets may use a template with sections like Background Context, Steps to Reproduce, Actual Results, Expected Results, and Analysis. But the template may be partially filled, absent entirely, or the key detail may come from subtask content appended to the description. Treat the full description as your source — don't penalise for template non-compliance if the substance is there.
 
 Watch for placeholder/dummy text such as `<brief technical changes>`, `<file locations>`, `<release flag ticket & link>`, or similar angle-bracket or brace-delimited fragments — treat these as unfilled regardless of surrounding content.
@@ -118,6 +120,7 @@ For each ticket, assess:
 3. Are there **red flags** — contradictions, pure symptoms with no cause identified, or content that is clearly placeholder/boilerplate?
 4. If flagged as a **text-similarity duplicate**, does the content support or contradict that conclusion?
 5. If flagged as a **possible recurrence**, does this look like the same failure mode recurring, or a different issue that happened to match on keywords?
+6. Is this just a product gap? Do we have lots of users/tickets calling for the functionality?
 
 ---
 
