@@ -79,6 +79,8 @@ For each `{KEY}.json` file:
 
 **Filename:** `{KEY} — {summary sanitized for filesystem}.md` (replace `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|` with `-`; truncate to ~80 chars if very long)
 
+**`board_column` resolution:** The board maps specific Jira status IDs to named columns (e.g., status "Backlog" id:10002 → column "To Triage"). Issues whose status is not mapped to any board column (e.g., "Closed", "Cancelled") fall back to using the raw Jira status name. This means `board_column` always has a value — either the mapped column name or the Jira status name. The board filter spans multiple parent epics; `collect.py` queries by a single parent epic, so the issue count may differ from what the board displays.
+
 ```markdown
 ---
 key: {key}

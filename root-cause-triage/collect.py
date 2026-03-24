@@ -172,7 +172,7 @@ def process_issue(base_url, auth, issue, status_column_map=None):
 
     status = fields.get("status", {}).get("name", "")
     status_id = fields.get("status", {}).get("id", "")
-    board_column = (status_column_map or {}).get(status_id, "")
+    board_column = (status_column_map or {}).get(status_id, "") or status
     issue_type = fields.get("issuetype", {}).get("name", "")
     priority = fields.get("priority", {}).get("name", "") if fields.get("priority") else ""
     reporter = fields.get("reporter", {}).get("displayName", "") if fields.get("reporter") else ""

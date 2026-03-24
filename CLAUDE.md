@@ -26,9 +26,11 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
   root-cause-triage/
     SKILL.md
-    jira_client.py      # Jira API client (load_env, auth, get/post, paginated search)
-    fetch.py            # Fetches triage issues, analyzes completeness, outputs summary
-    triage.py           # Executes confirmed transitions + adds comments
+    jira_client.py      # Jira API client (load_env, auth, get/post, cursor-based paginated search)
+    collect.py          # Mode: collect — fetch issues + linked details, save per-issue JSON to /tmp/triage_collect/
+    analyze.py          # Mode: analyze — read collected data, score completeness, detect duplicates, write Obsidian report
+    fetch.py            # Mode: triage — single-pass fetch + analysis for the triage workflow
+    triage.py           # Mode: triage — transition execution, comment posting, history writing
   sprint-metrics/
     SKILL.md
     jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, gitlab_get)
