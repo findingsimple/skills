@@ -73,9 +73,9 @@ def generate_person_markdown(period, period_label, received, given):
                 child_amount = child.get("amount", 0)
                 child_reason = (child.get("reason") or "").strip()
                 if child_reason:
-                    lines.append('  - +1 from **%s** (+%d): "%s"' % (child_giver, child_amount, child_reason))
+                    lines.append('  - +%d from **%s**: "%s"' % (child_amount, child_giver, child_reason))
                 else:
-                    lines.append("  - +1 from **%s** (+%d)" % (child_giver, child_amount))
+                    lines.append("  - +%d from **%s**" % (child_amount, child_giver))
 
     if given:
         total_pts = sum(b.get("amount", 0) for b in given)
