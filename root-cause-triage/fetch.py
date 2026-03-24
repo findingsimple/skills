@@ -93,13 +93,18 @@ def fetch_all_sibling_issues(base_url, auth, parent_issue_key):
     return jira_search_all(base_url, auth, jql, "key,summary,status,description")
 
 
-def check_issue_links(fields):
-    """Return the key of a confirmed linked duplicate, or None."""
+def check_issue_links(fields, sibling_keys):
+    """Return the key of a confirmed linked duplicate, or None.
+
+    Only considers a link as a true duplicate if the linked issue is also
+    a sibling under the same parent epic. Duplicate links to issues outside
+    the epic (e.g., support tickets linked as examples) are ignored.
+    """
     for link in fields.get("issuelinks", []):
         link_type = link.get("type", {}).get("name", "").lower()
         if "duplicate" in link_type:
             linked = link.get("outwardIssue") or link.get("inwardIssue")
-            if linked:
+            if linked and linked["key"] in sibling_keys:
                 return linked["key"]
     return None
 
@@ -271,6 +276,7 @@ def main():
     print("Found %d issues to triage" % len(issues), file=sys.stderr)
     print("Fetching all sibling issues for duplicate detection...", file=sys.stderr)
     all_siblings = fetch_all_sibling_issues(base_url, auth, parent_issue_key)
+    sibling_keys = {s["key"] for s in all_siblings}
     triage_keys = {i["key"] for i in issues}
     # Convert ADF descriptions to plain text for sibling issues
     for sib in all_siblings:
@@ -304,7 +310,7 @@ def main():
         filled_count = sum(1 for v in section_results.values() if v)
 
         # Duplicate/recurrence detection: Jira links take priority over text similarity
-        linked_dup = check_issue_links(fields)
+        linked_dup = check_issue_links(fields, sibling_keys)
         rec_key, rec_score = None, 0.0
         if linked_dup:
             action = "duplicate"
