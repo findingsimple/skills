@@ -3,6 +3,7 @@ name: bonusly-sync
 description: Syncs previous month's Bonusly recognition to Obsidian vault. Use when the user asks to sync bonusly data, pull recognition, or update team feedback from Bonusly.
 disable-model-invocation: true
 argument-hint: "--dry-run or vault-path"
+allowed-tools: Bash Read Glob
 ---
 
 # Bonusly Recognition Sync

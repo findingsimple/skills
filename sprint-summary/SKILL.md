@@ -3,6 +3,7 @@ name: sprint-summary
 description: Generates a sprint summary from Jira data into Obsidian vault. Use when the user asks for a sprint summary, sprint report, or wants to review what was completed in a sprint.
 disable-model-invocation: true
 argument-hint: "[sprint-name] [--team <name>] [--dry-run]"
+allowed-tools: Bash Read Glob AskUserQuestion
 ---
 
 # Sprint Summary

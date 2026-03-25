@@ -3,6 +3,7 @@ name: sprint-metrics
 description: Generates engineering metrics (MR counts, time to merge, review turnaround, cycle time) from GitLab for a Jira sprint. Use when the user asks for sprint metrics, merge request stats, cycle time data, or engineering performance numbers.
 disable-model-invocation: true
 argument-hint: "[sprint-name] [--team <name>] [--dry-run]"
+allowed-tools: Bash Read Glob AskUserQuestion
 ---
 
 # Sprint Metrics
