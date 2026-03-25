@@ -1,6 +1,6 @@
 ---
 name: root-cause-triage
-description: Triage root cause tickets — collect data to Obsidian knowledge base, analyze for duplicates/quality, or run the full triage workflow
+description: Triages root cause tickets — collects data to Obsidian knowledge base, analyzes for duplicates/quality, or runs the full triage workflow. Use when the user asks to triage bugs, collect root cause data, check for duplicate issues, or run the triage process.
 disable-model-invocation: true
 argument-hint: "[collect|analyze|triage] [--issue KEY] [--status STATUS] [--dry-run] [--force]"
 ---

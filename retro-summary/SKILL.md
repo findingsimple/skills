@@ -1,6 +1,6 @@
 ---
 name: retro-summary
-description: Extract and summarize retrospectives from FigJam boards into Obsidian vault
+description: Extracts and summarizes retrospectives from FigJam boards into Obsidian vault. Use when the user shares a FigJam URL, asks to summarize a retro, or wants to pull retrospective data into Obsidian.
 disable-model-invocation: true
 argument-hint: "<figjam-url> [--team <name>] [--dry-run] [--list]"
 allowed-tools: Read Edit Write Glob Bash Agent WebFetch mcp__figma__get_figjam

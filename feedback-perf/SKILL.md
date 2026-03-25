@@ -1,6 +1,6 @@
 ---
 name: feedback-perf
-description: Capture and manage performance review feedback in Obsidian vault
+description: Captures and manages performance review feedback in Obsidian vault. Use when the user wants to record feedback for someone, write a performance review, or synthesize captured feedback into review responses.
 disable-model-invocation: true
 argument-hint: "capture <name>: <feedback> | capture [mid|eoy] <name>: <feedback>"
 allowed-tools: Read Edit Write Glob Bash Agent
