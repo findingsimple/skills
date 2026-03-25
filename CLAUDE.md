@@ -43,6 +43,21 @@ Each skill lives in its own directory with a `SKILL.md` file:
     generate.py         # Fetches sprint report data, generates summary markdown
 ```
 
+## Skill Authoring Checklist
+
+When creating or modifying a SKILL.md, verify:
+
+- [ ] **Description**: third-person verb form ("Generates..."), includes "Use when..." trigger clause
+- [ ] **Frontmatter**: `allowed-tools` restricts to only needed tools; `disable-model-invocation: true` for user-triggered workflows
+- [ ] **SKILL.md under 500 lines**: extract prompts, templates, and reference content into separate files (progressive disclosure)
+- [ ] **References one level deep**: SKILL.md → reference file, never reference → reference
+- [ ] **No time-sensitive info**: no "recently added" or "new feature" — content must read correctly in 6 months
+- [ ] **Consistent terminology**: same term for same concept throughout (don't alternate "issue"/"ticket"/"bug")
+- [ ] **Solve, don't punt**: scripts handle errors with actionable messages, not generic "something went wrong"
+- [ ] **Examples use placeholders**: `PROJ-123`, `TeamA`, `Alex Chen` — no real names, keys, or identifiers
+
+Full best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
+
 ## Conventions
 
 - **One directory per skill** — skill name matches directory name. Each skill is self-contained and independently deployable. Shared utilities like `jira_client.py` and `setup.py` are intentionally duplicated per skill rather than extracted into a shared module — this keeps skills decoupled so changes to one never break another.
