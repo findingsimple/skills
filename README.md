@@ -18,6 +18,34 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
+## Scheduled Execution
+
+The `schedules/` directory contains macOS LaunchAgent templates for running skills automatically on a recurring schedule.
+
+**Install all schedules:**
+```bash
+~/.claude/skills/schedules/install.sh
+```
+
+**Unload all schedules:**
+```bash
+~/.claude/skills/schedules/install.sh --unload
+```
+
+**How it works:**
+- Each `.plist.template` defines a LaunchAgent with `{{HOME}}` placeholders
+- `install.sh` generates `.plist` files (resolving placeholders), symlinks them into `~/Library/LaunchAgents/`, and loads them via `launchctl`
+- Generated `.plist` files are gitignored — only templates are committed
+- Logs write to `/tmp/` (e.g., `/tmp/claude-sprint-pulse.log`)
+
+**Current schedules:**
+
+| Template | Schedule | Skill |
+|----------|----------|-------|
+| `com.claude.sprint-pulse.plist.template` | Weekdays at 08:30 | `/sprint-pulse --team ACE` |
+
+To add a new schedule, create a `.plist.template` in `schedules/` following the existing template pattern, then re-run `install.sh`.
+
 ## Architecture Notes
 
 Each skill is **self-contained** — shared utilities like `jira_client.py` and `setup.py` are intentionally duplicated per skill rather than extracted into a shared module. This keeps skills decoupled so changes to one never break another, and any skill can be moved or deleted independently.

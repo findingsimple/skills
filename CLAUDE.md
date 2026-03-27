@@ -49,6 +49,9 @@ Each skill lives in its own directory with a `SKILL.md` file:
     jira_client.py      # Jira API client (load_env, auth, jira_get, jira_search_all)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches sprint report data, generates summary markdown
+  schedules/
+    install.sh                              # Install/unload macOS LaunchAgents from templates
+    com.claude.sprint-pulse.plist.template  # Runs /sprint-pulse weekdays at 08:30
 ```
 
 ## Skill Authoring Checklist
@@ -77,6 +80,7 @@ Full best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-
 - **Avoid MCP for large payloads** — MCP tool responses load fully into conversation context. For endpoints that return large payloads (e.g., Jira issue changelogs), process in Python scripts instead. This prevents context exhaustion and forced compaction.
 - **Keep context lean** — skills that make many API calls should process data in Python scripts that save results to `/tmp/*.json` files. Only print summaries to stdout. The markdown generation step reads from these files rather than keeping raw API data in context.
 - **Gitignore runtime artifacts** — if a skill writes persistent files into its own directory (e.g., `triage_history.json`), add them to `.gitignore`. Only `/tmp/` files are ephemeral by default; anything in the skill directory will be tracked by git otherwise.
+- **Scheduled execution** — the `schedules/` directory contains macOS LaunchAgent templates and an `install.sh` script for running skills on a cron-like schedule. Templates use `{{HOME}}` placeholders resolved at install time. Generated `.plist` files are gitignored; only `.plist.template` files are committed.
 - **Keep README in sync with SKILL.md** — when a SKILL.md's capabilities, supported formats, or prerequisites change, update the corresponding entry in `README.md` too. The README is the public-facing summary; stale entries mislead users.
 
 ## Environment Variables
