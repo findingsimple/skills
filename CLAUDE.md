@@ -28,6 +28,9 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
     jira_client.py      # Jira API client (load_env, auth, get/post, cursor-based paginated search)
     collect.py          # Mode: collect — fetch issues + linked details, save per-issue JSON to /tmp/triage_collect/
+    summarize.py        # Mode: collect — read per-issue JSON, generate Obsidian Markdown with extractive summaries
+    enrich.py           # Mode: collect — prepare agent batches (prepare) and apply enriched summaries (apply)
+    ENRICH_PROMPT.md    # Agent prompt template for linked issue summarization and root cause synthesis
     analyze.py          # Mode: analyze — read collected data, score completeness, detect duplicates, write Obsidian report
     fetch.py            # Mode: triage — single-pass fetch + analysis for the triage workflow
     triage.py           # Mode: triage — transition execution, comment posting, history writing

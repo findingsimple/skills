@@ -42,6 +42,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Collect root cause issues from Jira")
     parser.add_argument("--issue", help="Collect a single issue by key (e.g., PDE-1234)")
     parser.add_argument("--status", help="Filter to a specific status (e.g., 'To Triage')")
+    parser.add_argument("--include-done", action="store_true", help="Include Closed/Cancelled issues (excluded by default)")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without writing files")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files (default: skip)")
     return parser.parse_args()
@@ -53,11 +54,18 @@ def fetch_single_issue(base_url, auth, key):
     return [data]
 
 
-def fetch_all_issues(base_url, auth, parent_key, status_filter=None):
-    """Fetch all sibling issues under the parent epic."""
+def fetch_all_issues(base_url, auth, parent_key, status_filter=None, include_done=False):
+    """Fetch all sibling issues under the parent epic.
+
+    By default, mirrors the board's 'hide older items' behaviour: excludes
+    issues in a Done status category that haven't been updated in the last 2 weeks.
+    Pass include_done=True to fetch everything.
+    """
     jql = "parent = %s" % parent_key
     if status_filter:
         jql += ' AND status = "%s"' % status_filter
+    elif not include_done:
+        jql += " AND NOT (statusCategory = Done AND NOT (updated >= -2w))"
     jql += " ORDER BY created ASC"
     return jira_search_all(base_url, auth, jql, FIELDS)
 
@@ -291,11 +299,12 @@ def main():
         print("Fetching issue %s..." % args.issue, file=sys.stderr)
         raw_issues = fetch_single_issue(base_url, auth, args.issue)
     else:
-        print("Fetching all sibling issues under %s%s..." % (
-            parent_key,
-            ' (status: "%s")' % args.status if args.status else "",
+        status_note = ' (status: "%s")' % args.status if args.status else ""
+        done_note = "" if args.include_done else " (hiding stale done items)"
+        print("Fetching all sibling issues under %s%s%s..." % (
+            parent_key, status_note, done_note,
         ), file=sys.stderr)
-        raw_issues = fetch_all_issues(base_url, auth, parent_key, args.status)
+        raw_issues = fetch_all_issues(base_url, auth, parent_key, args.status, args.include_done)
 
     if not raw_issues:
         print("No issues found.")

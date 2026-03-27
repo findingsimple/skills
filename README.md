@@ -13,7 +13,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
-| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — collect data, analyze quality/duplicates, or run full triage workflow |
+| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
@@ -165,29 +165,23 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 ### root-cause-triage
 
-Three modes for working with root cause tickets on a Jira board:
+Two modes for working with root cause tickets on a Jira board:
 
-**Collect** — build a per-issue Obsidian knowledge base from Jira data (issues + linked issues with summarized descriptions):
+**Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, then uses agents to produce quality linked issue summaries and a root cause analysis synthesis:
 ```bash
-/root-cause-triage collect                    # fetch all issues, write Markdown to Obsidian
-/root-cause-triage collect --issue PDE-1234   # collect a single issue
+/root-cause-triage collect                    # full pipeline: fetch, summarize, enrich
+/root-cause-triage collect --issue PROJ-1234  # collect a single issue
 /root-cause-triage collect --status "To Triage" # filter by status
 /root-cause-triage collect --dry-run          # preview without writing
 /root-cause-triage collect --force            # overwrite existing files
+/root-cause-triage collect --include-done     # include stale done items hidden by the board
 ```
 
-**Analyze** — run analysis on collected data (informational, no Jira mutations):
+**Analyze** — run structural and semantic analysis on collected data (informational, no Jira mutations):
 ```bash
 /root-cause-triage analyze                    # analyze "To Triage" issues
 /root-cause-triage analyze --all-statuses     # analyze everything
-/root-cause-triage analyze --issue PDE-1234   # analyze a single issue
-/root-cause-triage analyze --output-json      # also write JSON to /tmp/
-```
-
-**Triage** — the original single-pass workflow (fetch, assess, transition):
-```bash
-/root-cause-triage triage                     # interactive triage
-/root-cause-triage triage --dry-run           # preview without making changes
+/root-cause-triage analyze --issue PROJ-1234  # analyze a single issue
 ```
 
 **Prerequisites:**

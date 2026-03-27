@@ -2,8 +2,7 @@
 name: root-cause-triage
 description: Collects root cause ticket data to Obsidian knowledge base and analyzes for duplicates, quality, and completeness. Use when the user asks to collect root cause data, check for duplicate issues, or assess issue quality.
 disable-model-invocation: true
-argument-hint: "[collect|analyze] [--issue KEY] [--status STATUS] [--all-statuses] [--dry-run] [--force]"
-allowed-tools: Bash Read Write Glob Agent
+argument-hint: "[collect|analyze] [--issue KEY] [--status STATUS] [--include-done] [--all-statuses] [--dry-run] [--force]"
 ---
 
 # Root Cause Triage
@@ -28,6 +27,9 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 |------|---------|
 | `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_search_all`, `adf_to_text` |
 | `collect.py` | Mode: collect — fetch issues + linked issue details, save per-issue JSON to `/tmp/triage_collect/` |
+| `summarize.py` | Mode: collect — read per-issue JSON, generate Obsidian Markdown with extractive summaries |
+| `enrich.py` | Mode: collect — prepare agent batches and apply enriched summaries to Markdown files |
+| `ENRICH_PROMPT.md` | Agent prompt template for linked issue summarization and root cause synthesis |
 | `analyze.py` | Mode: analyze — structural scoring, duplicate detection, writes report + `/tmp/triage_analysis.json` |
 | `QUALITY_PROMPT.md` | Agent prompt for semantic quality assessment (used by analyze mode Step A2) |
 | `fetch.py` | (Deprecated — was used by triage mode) |
@@ -55,9 +57,10 @@ Output: {TRIAGE_OUTPUT_PATH}
 
 ## Mode: Collect
 
-Build a per-issue Obsidian knowledge base from Jira data. This is a two-step process:
+Build a per-issue Obsidian knowledge base from Jira data. Three steps:
 1. `collect.py` fetches all data from Jira and saves per-issue JSON to `/tmp/triage_collect/`
-2. Claude processes each issue's JSON one at a time, summarizes linked issue descriptions, and writes the final Markdown file to Obsidian
+2. `summarize.py` reads the JSON files, generates Obsidian Markdown with extractive summaries
+3. `enrich.py` + agent calls produce quality linked issue summaries and a root cause analysis synthesis
 
 ### Step C1 — Run collect.py
 
@@ -69,76 +72,71 @@ Pass through any arguments from Step 1. If `collect.py` exits with a non-zero st
 
 If `--dry-run` was specified, show the output and stop — do not proceed to summarization.
 
-### Step C2 — Summarize and write Markdown files
+### Step C2 — Run summarize.py
 
-After `collect.py` completes, process each issue's JSON file in `/tmp/triage_collect/` one at a time.
-
-For each `{KEY}.json` file:
-
-1. Read the JSON file
-2. Check if a file matching `{TRIAGE_OUTPUT_PATH}/Issues/{KEY} — *.md` already exists — if so, skip unless `--force` was specified
-3. Summarize the issue data into a Markdown file with this format:
-
-**Filename:** `{KEY} — {summary sanitized for filesystem}.md` (replace `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|` with `-`; truncate to ~80 chars if very long)
-
-**`board_column` resolution:** The board maps specific Jira status IDs to named columns (e.g., status "Backlog" id:10002 → column "To Triage"). Issues whose status is not mapped to any board column (e.g., "Closed", "Cancelled") fall back to using the raw Jira status name. This means `board_column` always has a value — either the mapped column name or the Jira status name. The board filter spans multiple parent epics; `collect.py` queries by a single parent epic, so the issue count may differ from what the board displays.
-
-```markdown
----
-key: {key}
-board_column: {board_column}
-status: {status}
-issue_type: {issue_type}
-priority: {priority}
-reporter: {reporter}
-created: {created}
-parent_epic: {TRIAGE_PARENT_ISSUE_KEY}
-collected_at: {collected_at}
-linked_issue_count: {linked_issue_count}
----
-
-# [{key}]({JIRA_BASE_URL}/browse/{key}) — {summary}
-
-## Description
-
-{description text — full plain text including subtask content}
-
-## Linked Issues
-
-{For each link group (e.g., "duplicates", "relates to", "causes"):}
-
-### {Group Label} ({count})
-
-{For each linked issue in the group:}
-#### [{linked_key}]({JIRA_BASE_URL}/browse/{linked_key}) — {linked_summary} *({linked_issue_type})*
-- **Status:** {linked_status}
-{If description was fetched, summarize it in 3-5 sentences:}
-- **Summary:** {summary capturing the core problem, specific conditions/customers affected, what was required to resolve it, and how it connects to the root cause}
-{If no description was fetched:}
-- *(stub only — no description fetched)*
+```bash
+python3 ~/.claude/skills/root-cause-triage/summarize.py [--issue KEY] [--force] [--dry-run]
 ```
 
-**Summarization guidelines for linked issue descriptions:**
-- Capture the core problem or observation described in the linked issue
-- Note specific conditions, affected customers/properties, PMS provider, and business IDs where mentioned
-- Explain what was required to resolve it (manual support intervention, configuration change, etc.)
-- Connect back to how this relates to the root cause — why does this linked issue exist because of the gap?
-- Keep it to 3-5 sentences — enough to understand the full context without reading the original ticket
-- If the description is very short or empty, just note that
+Pass through `--issue`, `--force`, and `--dry-run` flags from Step 1.
 
-**Formatting conventions:**
-- All issue keys must be hyperlinked: `[KEY](JIRA_BASE_URL/browse/KEY)`
-- Filenames include the issue title: `{KEY} — {sanitized summary}.md`
-- For large "causes" groups (>10 items), write a paragraph summary instead of listing each stub
+The script:
+- Reads per-issue JSON from `/tmp/triage_collect/`
+- Skips issues that already have a Markdown file (unless `--force`)
+- Generates frontmatter (key, board_column, status, issue_type, priority, reporter, created, parent_epic, collected_at, linked_issue_count)
+- Writes full description including subtask content
+- Groups linked issues by relationship type (duplicates, relates to, causes)
+- Summarizes linked issue descriptions using keyword-prioritized extraction (3-5 key sentences)
+- For large "causes" groups (>10 items), writes a paragraph summary with a compact list
+- Writes Markdown files to `{TRIAGE_OUTPUT_PATH}/Issues/{KEY} — {sanitized summary}.md`
 
-4. Write the Markdown file to `{TRIAGE_OUTPUT_PATH}/Issues/{KEY}.md`
+**`board_column` resolution:** The board maps specific Jira status IDs to named columns (e.g., status "Backlog" id:10002 → column "To Triage"). Issues whose status is not mapped to any board column (e.g., "Closed", "Cancelled") fall back to using the raw Jira status name.
 
-After processing all issues, report:
+**Board count vs collect count:** `collect.py` uses `parent = {TRIAGE_PARENT_ISSUE_KEY}` (direct children only), while the board filter uses `parentEpic in (...)` which traverses the full hierarchy and spans multiple parent epics. This means the board count will typically be slightly higher because it includes: (1) the parent epic itself, (2) subtasks of child issues (e.g., Code subtasks that appear in Rejected), and (3) children of other parent epics on the board. Subtask data is already captured within the parent issue's JSON, so this gap is expected and not a data loss.
+
+### Step C3 — Agent enrichment
+
+This step uses agents to replace the extractive summaries from Step C2 with quality, contextual summaries and adds a "Root Cause Analysis" synthesis section to each issue.
+
+If `--dry-run` was specified in Step 1, skip this step.
+
+**C3a — Prepare batches:**
+
+```bash
+python3 ~/.claude/skills/root-cause-triage/enrich.py prepare [--issue KEY] [--batch-size 5] [--force]
 ```
-Collection complete:
-- {n} Markdown files written to {TRIAGE_OUTPUT_PATH}/Issues/
-- {n} skipped (already existed)
-- Index updated at {TRIAGE_OUTPUT_PATH}/Issues/_index.md
+
+Pass through `--issue` and `--force` from Step 1. This reads the collected JSON, builds agent prompts grouped into batches, and writes them to `/tmp/triage_enrich/`. Issues without linked issue descriptions are skipped.
+
+If no issues need enrichment, stop here.
+
+**C3b — Run agent batches:**
+
+Read `/tmp/triage_enrich/batches.json` to get the list of batches. For each batch:
+
+1. Read the batch prompt file (e.g., `/tmp/triage_enrich/batch_001.txt`)
+2. Spawn a `general-purpose` agent using **model: sonnet** with the prompt
+3. Parse the agent's JSON response — if not valid JSON, strip markdown fences and retry parsing
+4. For each issue in the response, save to `/tmp/triage_enrich/result_{KEY}.json`
+
+Run up to 3 agent batches concurrently to balance speed with reliability. If a batch fails to parse, log the raw response to `/tmp/triage_enrich/failed_batch_{N}.txt` and continue with remaining batches.
+
+**C3c — Apply results:**
+
+```bash
+python3 ~/.claude/skills/root-cause-triage/enrich.py apply [--issue KEY] [--dry-run]
+```
+
+This reads the agent results and updates the Markdown files:
+- Inserts a "## Root Cause Analysis" section above Description (first section after the heading)
+- Replaces extractive `**Summary:**` lines with agent-quality summaries
+
+After applying, report:
+```
+Enrichment complete:
+- {n} files enriched with root cause analysis
+- {n} linked issue summaries upgraded
+- {n} skipped (no enrichment result)
 ```
 
 ---
