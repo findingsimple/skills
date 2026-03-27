@@ -1,13 +1,13 @@
-# Triage Agent Quality Assessment Prompt
+# Quality Assessment Prompt
 
-Spawn a `general-purpose` agent using **model: opus** with the prompt below. Build the prompt by iterating over all issues in `/tmp/triage_issues.json`. The agent runs in a forked context with no conversation history — include everything it needs inline.
+Spawn a `general-purpose` agent using **model: opus** with the prompt below. Build the prompt by iterating over all issues in `/tmp/triage_analysis.json`. The agent runs in a forked context with no conversation history — include everything it needs inline.
 
-**Important:** Truncate each issue's description to **800 characters** before including it in the prompt. This keeps the prompt manageable when there are many issues to triage. The agent is assessing the *root cause framing and PM-actionability*, not parsing full technical detail.
+**Important:** Each issue's `description` field in the analysis JSON is already truncated to 800 characters. Use it directly — no further truncation needed. The agent is assessing the *root cause framing and PM-actionability*, not parsing full technical detail.
 
 ## Prompt
 
 ```
-You are helping triage root cause tickets on behalf of a product team. Your job is to assess whether each ticket contains enough information for a **product manager** to understand the root issue and design a solution — without needing to chase the submitting engineer for clarification.
+You are assessing the quality of root cause tickets on behalf of a product team. Your job is to determine whether each ticket contains enough information for a **product manager** to understand the root issue and design a solution — without needing to chase the submitting engineer for clarification.
 
 {If triage history has entries from the last 90 days, include this section (cap to most recent 20 entries):}
 ## Recent Triage History
@@ -41,12 +41,13 @@ For each ticket, assess:
 
 ---
 
-{For each issue in /tmp/triage_issues.json:}
+{For each issue in /tmp/triage_analysis.json:}
 ## {key} — {summary}
 **Completeness score:** {filled_count}/{total_sections}
-**Regex recommendation:** {recommendation}
-{If has_subtasks: **Note:** Description includes content from subtasks.}
-{If duplicate_of: **Flagged as duplicate of:** {duplicate_of} ({duplicate_source}, {duplicate_score*100}% match)}
+**Structural recommendation:** {recommendation}
+{If linked_issue_count > 0: **Linked issues:** {linked_issue_count}}
+{If linked_support_count > 0: **Support tickets:** {linked_support_count}}
+{If duplicate_of: **Flagged as duplicate of:** {duplicate_of} ({duplicate_score*100}% text similarity)}
 {If recurrence_of: **Possible recurrence of resolved ticket:** {recurrence_of} ({recurrence_score*100}% similarity)}
 
 **Description:**
@@ -60,11 +61,11 @@ For each ticket, assess:
 - `"thin"` — The root cause direction is identifiable but key details are missing (e.g., which system, what triggers it, or how severe).
 - `"vague"` — Only symptoms are described, or the content is too ambiguous to identify a specific root cause.
 
-**Action criteria:**
+**Recommended action criteria:**
 - `"ready"` — Quality is good; sufficient for development.
 - `"more_info"` — Quality is thin or vague; needs clarification before development.
-- `"duplicate"` — Content confirms the duplicate flag from text similarity or Jira links.
-- `"skip"` — The ticket appears to already be in progress, has been reassigned, or is otherwise not appropriate for triage at this time. Only use when the ticket should not be actioned in either direction.
+- `"duplicate"` — Content confirms the duplicate flag from text similarity.
+- `"skip"` — The ticket appears to already be in progress, has been reassigned, or is otherwise not appropriate for assessment at this time.
 
 Return a JSON array — one object per ticket — with this structure:
 [
@@ -73,10 +74,10 @@ Return a JSON array — one object per ticket — with this structure:
     "quality": "good" | "thin" | "vague",
     "quality_note": "one sentence — what is missing or unclear for a PM, or null if quality is good",
     "duplicate_assessment": "confirmed" | "unlikely" | "n/a",
-    "duplicate_note": "one sentence if assessment differs from regex flag, otherwise null",
+    "duplicate_note": "one sentence if assessment differs from structural flag, otherwise null",
     "recurrence_assessment": "likely" | "unlikely" | "n/a",
     "recurrence_note": "one sentence if this looks like a recurring failure mode, otherwise null",
-    "suggested_action": "ready" | "more_info" | "duplicate" | "skip"
+    "recommended_action": "ready" | "more_info" | "duplicate" | "skip"
   }
 ]
 

@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--issue", help="Analyze a single issue by key")
     parser.add_argument("--status", default="To Triage", help="Filter by status (default: 'To Triage')")
     parser.add_argument("--all-statuses", action="store_true", help="Analyze all statuses")
-    parser.add_argument("--output-json", action="store_true", help="Write results to /tmp/triage_analysis.json")
+    parser.add_argument("--output-json", action="store_true", help="(no-op, JSON is always written to /tmp/triage_analysis.json)")
     return parser.parse_args()
 
 
@@ -374,6 +374,7 @@ def main():
         results.append({
             "key": key,
             "summary": summary,
+            "description": description[:800],
             "status": issue.get("status", ""),
             "issue_type": issue.get("issue_type", ""),
             "created": issue.get("created", ""),
@@ -425,11 +426,10 @@ def main():
     duplicates = sum(1 for r in results if r["recommendation"] == "duplicate")
     print("\nSummary: %d ready, %d need more info, %d duplicates" % (ready, more_info, duplicates))
 
-    # Write JSON output
-    if args.output_json:
-        with open("/tmp/triage_analysis.json", "w") as f:
-            json.dump(results, f, indent=2)
-        print("\nAnalysis saved to /tmp/triage_analysis.json", file=sys.stderr)
+    # Write JSON output (always — used by agent quality assessment step)
+    with open("/tmp/triage_analysis.json", "w") as f:
+        json.dump(results, f, indent=2)
+    print("\nAnalysis saved to /tmp/triage_analysis.json", file=sys.stderr)
 
     # Write analysis report to Obsidian
     analysis_dir = os.path.join(output_path, "Analysis")
