@@ -114,8 +114,8 @@ If no issues need enrichment, stop here.
 
 Read `/tmp/triage_enrich/batches.json` to get the list of batches. For each batch:
 
-1. Read the batch prompt file (e.g., `/tmp/triage_enrich/batch_001.txt`)
-2. Spawn a `general-purpose` agent using **model: sonnet** with the prompt
+1. Spawn a `general-purpose` agent using **model: sonnet** with the prompt: "Use the Bash tool to run: cat /tmp/triage_enrich/batch_NNN.txt — Then follow the instructions in the file exactly. Return ONLY the JSON response as specified in the prompt."
+   > **Note:** Agents cannot use the Read tool on `/tmp/` paths due to sandbox permissions. Always instruct agents to use `cat` via the Bash tool to read batch files.
 3. Parse the agent's JSON response — if not valid JSON, strip markdown fences and retry parsing
 4. For each issue in the response, save to `/tmp/triage_enrich/result_{KEY}.json`
 
