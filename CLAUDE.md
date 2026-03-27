@@ -36,6 +36,14 @@ Each skill lives in its own directory with a `SKILL.md` file:
     jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, jira_search_all, gitlab_get)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches GitLab MR data, calculates metrics, writes markdown
+  sprint-pulse/
+    SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
+    alerts.md           # Alert definitions, thresholds, output templates
+    jira_client.py      # Jira API client (load_env, auth, get, search, changelog, comments)
+    gitlab_client.py    # GitLab API client (load_gitlab_env, get, search MRs, MR notes)
+    setup.py            # Validates env, discovers active sprint, parses team config
+    fetch.py            # Fetches sprint issues + changelogs + comments + MRs + support tickets
+    analyze.py          # Runs deterministic alerts (stale items, support tickets)
   sprint-summary/
     SKILL.md
     jira_client.py      # Jira API client (load_env, auth, jira_get, jira_search_all)
@@ -78,16 +86,19 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | Variable | Used by |
 |----------|---------|
 | `OBSIDIAN_VAULT_PATH` | retro-summary |
-| `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary |
+| `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
-| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, root-cause-triage |
-| `JIRA_EMAIL` | sprint-summary, sprint-metrics, root-cause-triage |
-| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, root-cause-triage |
-| `SPRINT_TEAMS` | sprint-summary, sprint-metrics |
-| `GITLAB_URL` | sprint-metrics |
-| `GITLAB_TOKEN` | sprint-metrics |
-| `GITLAB_PROJECT_ID` | sprint-metrics |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
+| `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse |
+| `GITLAB_URL` | sprint-metrics, sprint-pulse |
+| `GITLAB_TOKEN` | sprint-metrics, sprint-pulse |
+| `GITLAB_PROJECT_ID` | sprint-metrics, sprint-pulse |
 | `TRIAGE_BOARD_ID` | root-cause-triage |
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
 | `TRIAGE_OUTPUT_PATH` | root-cause-triage |
-| `SUPPORT_PROJECT_KEY` | sprint-summary |
+| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse |
+| `SUPPORT_BOARD_ID` | sprint-pulse |
+| `SUPPORT_TEAM_LABEL` | sprint-pulse |
+| `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse |

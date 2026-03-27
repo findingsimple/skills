@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Shared Jira API client utilities for sprint-pulse scripts."""
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import base64
+
+
+def load_env(keys):
+    """Load specific environment variables from the shell environment.
+
+    Args:
+        keys: list of variable names to extract
+
+    Returns:
+        dict mapping variable names to values
+    """
+    return {k: os.environ.get(k, "") for k in keys}
+
+
+def init_auth(env):
+    """Create base64 auth string and return (base_url, auth).
+
+    Validates that JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN are present.
+    """
+    for key in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"):
+        if not env.get(key):
+            print("ERROR: Missing env var: %s" % key)
+            sys.exit(1)
+    base_url = env["JIRA_BASE_URL"]
+    auth = base64.b64encode((env["JIRA_EMAIL"] + ":" + env["JIRA_API_TOKEN"]).encode()).decode()
+    return base_url, auth
+
+
+def jira_get(base_url, path, auth):
+    """GET a JSON response from the Jira API."""
+    req = urllib.request.Request(
+        base_url + path,
+        headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Jira API %d on %s: %s" % (e.code, path, body)) from None
+
+
+def jira_search_all(base_url, auth, jql, fields):
+    """Run a JQL search with automatic pagination. Returns all matching issues.
+
+    Supports both cursor-based pagination (nextPageToken/isLast, used by
+    Jira API v3 /search/jql) and offset-based pagination (total/startAt).
+
+    Args:
+        base_url: Jira base URL
+        auth: base64 auth string
+        jql: JQL query string (unencoded)
+        fields: comma-separated field names
+    """
+    encoded_jql = urllib.parse.quote(jql, safe="")
+    path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s" % (encoded_jql, fields)
+    data = jira_get(base_url, path, auth)
+
+    issues = data.get("issues", [])
+
+    # Cursor-based pagination (v3 /search/jql endpoint)
+    if "nextPageToken" in data:
+        while not data.get("isLast", True):
+            token = data["nextPageToken"]
+            next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s&nextPageToken=%s" % (
+                encoded_jql, fields, urllib.parse.quote(token, safe=""),
+            )
+            data = jira_get(base_url, next_path, auth)
+            new_issues = data.get("issues", [])
+            if not new_issues:
+                print("WARNING: Cursor pagination returned empty page at %d issues, stopping" % len(issues), file=sys.stderr)
+                break
+            issues.extend(new_issues)
+        return issues
+
+    # Offset-based pagination (fallback for older endpoints)
+    total = data.get("total", len(issues))
+    while len(issues) < total:
+        before = len(issues)
+        next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&startAt=%d&fields=%s" % (
+            encoded_jql, len(issues), fields
+        )
+        next_data = jira_get(base_url, next_path, auth)
+        issues.extend(next_data.get("issues", []))
+        if len(issues) == before:
+            print("WARNING: Pagination stalled at %d/%d issues, stopping" % (len(issues), total), file=sys.stderr)
+            break
+
+    return issues
+
+
+def jira_get_changelog(base_url, auth, issue_key):
+    """Fetch the full changelog for an issue (paginated).
+
+    Returns a list of changelog entries, each with:
+        - created: timestamp of the change
+        - items: list of field changes (field, fromString, toString)
+        - author: displayName of the person who made the change
+    """
+    entries = []
+    start_at = 0
+    while True:
+        path = "/rest/api/3/issue/%s/changelog?startAt=%d&maxResults=100" % (issue_key, start_at)
+        data = jira_get(base_url, path, auth)
+        values = data.get("values", [])
+        if not values:
+            break
+        for entry in values:
+            entries.append({
+                "created": entry.get("created", ""),
+                "author": entry.get("author", {}).get("displayName", ""),
+                "items": [
+                    {
+                        "field": item.get("field", ""),
+                        "from_string": item.get("fromString", ""),
+                        "to_string": item.get("toString", ""),
+                    }
+                    for item in entry.get("items", [])
+                ],
+            })
+        if start_at + len(values) >= data.get("total", 0):
+            break
+        start_at += len(values)
+    return entries
+
+
+def jira_get_comments(base_url, auth, issue_key):
+    """Fetch comments for an issue.
+
+    Returns a list of comment dicts with:
+        - author: displayName
+        - created: timestamp
+        - body_text: plain text extracted from ADF body
+    """
+    path = "/rest/api/3/issue/%s/comment?maxResults=100&orderBy=created" % issue_key
+    data = jira_get(base_url, path, auth)
+    comments = []
+    for c in data.get("comments", []):
+        body_text = adf_to_text(c.get("body", {}))
+        comments.append({
+            "author": c.get("author", {}).get("displayName", ""),
+            "created": c.get("created", ""),
+            "body_text": body_text,
+        })
+    return comments
+
+
+def adf_to_text(adf):
+    """Convert Atlassian Document Format JSON to plain text."""
+    if not adf or not isinstance(adf, dict):
+        return ""
+    parts = []
+    for node in adf.get("content", []):
+        node_type = node.get("type", "")
+        if node_type == "paragraph":
+            para_parts = []
+            for inline in node.get("content", []):
+                if inline.get("type") == "text":
+                    para_parts.append(inline.get("text", ""))
+                elif inline.get("type") == "mention":
+                    para_parts.append("@" + inline.get("attrs", {}).get("text", ""))
+            parts.append("".join(para_parts))
+        elif node_type in ("bulletList", "orderedList"):
+            for item in node.get("content", []):
+                item_text = adf_to_text(item)
+                if item_text:
+                    parts.append("- " + item_text)
+        elif node_type == "blockquote":
+            inner = adf_to_text(node)
+            if inner:
+                parts.append("> " + inner)
+        elif node_type == "codeBlock":
+            for inline in node.get("content", []):
+                if inline.get("type") == "text":
+                    parts.append(inline.get("text", ""))
+        elif node_type == "listItem":
+            parts.append(adf_to_text(node))
+    return "\n".join(parts)
