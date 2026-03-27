@@ -13,8 +13,8 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
-| [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Triage root cause tickets — collect data, analyze quality/duplicates, or run full triage workflow |
+| [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
