@@ -16,11 +16,22 @@ For each root cause issue below, produce:
    - The business consequence (manual support burden, data integrity, customer frustration)
    - Whether the linked issues suggest a narrow or systemic problem
 
+3. **Classification** — Based on the description and linked issue evidence, classify the root cause into exactly one category:
+   - `code_bug` — A defect in existing code (incorrect logic, missing edge case, regression)
+   - `feature_request` — Missing functionality or a gap in product capability
+   - `config_issue` — Misconfiguration, incorrect setup, or a configuration gap
+   - `docs_gap` — Missing, outdated, or unclear documentation (runbooks, setup guides, API docs)
+   - `process_gap` — Manual process failure or workflow gap (not documentation)
+   - `unknown` — Insufficient evidence to classify
+
+   Do NOT rely on the Jira issue type (Bug, Story, etc.) — classify based on the actual evidence in the descriptions.
+
 Respond with a JSON array. Each element:
 
 ```json
 {
   "key": "PROJ-123",
+  "classification": "code_bug",
   "root_cause_analysis": "Synthesis paragraph...",
   "linked_summaries": {
     "PROJ-456": "Summary of linked issue...",

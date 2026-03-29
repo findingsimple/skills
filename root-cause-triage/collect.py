@@ -13,7 +13,7 @@ from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_t
 
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "TRIAGE_BOARD_ID", "TRIAGE_PARENT_ISSUE_KEY", "TRIAGE_OUTPUT_PATH"]
 
-FIELDS = "key,summary,status,description,issuetype,issuelinks,subtasks,created,reporter,labels,priority"
+FIELDS = "key,summary,status,resolution,description,issuetype,issuelinks,subtasks,created,reporter,labels,priority"
 
 # Priority order for fetching full linked issue descriptions
 LINK_TYPE_PRIORITY = [
@@ -181,6 +181,7 @@ def process_issue(base_url, auth, issue, status_column_map=None):
     status = fields.get("status", {}).get("name", "")
     status_id = fields.get("status", {}).get("id", "")
     board_column = (status_column_map or {}).get(status_id, "") or status
+    resolution = fields.get("resolution", {}).get("name", "") if fields.get("resolution") else ""
     issue_type = fields.get("issuetype", {}).get("name", "")
     priority = fields.get("priority", {}).get("name", "") if fields.get("priority") else ""
     reporter = fields.get("reporter", {}).get("displayName", "") if fields.get("reporter") else ""
@@ -216,6 +217,7 @@ def process_issue(base_url, auth, issue, status_column_map=None):
         "status": status,
         "status_id": status_id,
         "board_column": board_column,
+        "resolution": resolution,
         "issue_type": issue_type,
         "priority": priority,
         "reporter": reporter,

@@ -295,6 +295,113 @@ def count_support_links(issue):
     return count
 
 
+# Link types that indicate active development or resolution work
+DEV_LINK_TYPES = {"blocks", "is implemented by", "implements", "is caused by"}
+
+
+def assess_resolution(issue):
+    """Assess the current resolution status of a root cause issue.
+
+    Returns a dict with:
+      - resolution: short label (unresolved, in_progress, resolved, roadmapped, rejected)
+      - resolution_detail: human-readable summary line
+      - resolution_outline: list of strings describing what was/is being done
+      - dev_links: list of linked dev/implementation tickets
+    """
+    board_column = issue.get("board_column", "").lower()
+    status = issue.get("status", "").lower()
+    jira_resolution = issue.get("resolution", "")  # e.g., "Done", "Won't Do", "Duplicate"
+
+    # Find linked development tickets
+    dev_links = []
+    linked = issue.get("linked_issues", {})
+    if isinstance(linked, dict):
+        for group_label, items in linked.items():
+            if group_label.lower() not in DEV_LINK_TYPES:
+                continue
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                dev_links.append({
+                    "key": item.get("key", ""),
+                    "summary": item.get("summary", ""),
+                    "status": item.get("status", ""),
+                    "issue_type": item.get("issue_type", ""),
+                    "relationship": group_label,
+                })
+
+    # Determine resolution status from board column + status
+    if board_column in ("completed / roadmapped",):
+        resolution = "resolved"
+        detail = "Resolved"
+        if jira_resolution:
+            detail += " (%s)" % jira_resolution
+    elif board_column == "rejected":
+        resolution = "rejected"
+        detail = "Rejected"
+        if jira_resolution:
+            detail += " (%s)" % jira_resolution
+    elif board_column == "in progress" or status in ("in progress", "in review"):
+        resolution = "in_progress"
+        detail = "In Progress"
+    elif board_column == "ready for development" or status == "planned":
+        resolution = "roadmapped"
+        detail = "Ready for Development"
+    elif board_column == "more info required":
+        resolution = "blocked"
+        detail = "More Info Required"
+    else:
+        resolution = "unresolved"
+        detail = "To Triage"
+
+    # Build resolution outline — what was/is being done
+    outline = []
+
+    # Subtasks describe the actual implementation work
+    subtasks = issue.get("subtasks", [])
+    if subtasks:
+        for st in subtasks:
+            st_summary = st.get("summary", "")
+            st_status = st.get("status", "")
+            if st_summary:
+                status_tag = " (%s)" % st_status if st_status else ""
+                outline.append("Subtask: %s%s" % (st_summary, status_tag))
+
+    # Dev links describe related implementation/blocking work
+    if dev_links:
+        for d in dev_links:
+            outline.append("%s: %s — %s (%s)" % (
+                d["relationship"].title(), d["key"], d["summary"][:80], d["status"],
+            ))
+
+    # Labels can indicate team ownership or categorisation
+    labels = issue.get("labels", [])
+    team_labels = [l for l in labels if l.startswith("team-")]
+    if team_labels:
+        outline.append("Team: %s" % ", ".join(team_labels))
+
+    # Enrich detail line with dev link summary
+    if dev_links:
+        active = [d for d in dev_links if d["status"].lower() not in CLOSED_STATUSES]
+        closed = [d for d in dev_links if d["status"].lower() in CLOSED_STATUSES]
+        parts = []
+        if active:
+            keys = ", ".join(d["key"] for d in active)
+            parts.append("%d active dev ticket(s): %s" % (len(active), keys))
+        if closed:
+            keys = ", ".join(d["key"] for d in closed)
+            parts.append("%d closed dev ticket(s): %s" % (len(closed), keys))
+        if parts:
+            detail += " — " + "; ".join(parts)
+
+    return {
+        "resolution": resolution,
+        "resolution_detail": detail,
+        "resolution_outline": outline,
+        "dev_links": dev_links,
+    }
+
+
 def jira_link(key, base_url):
     """Return a Markdown hyperlink for a Jira issue key."""
     if base_url:
@@ -363,6 +470,8 @@ def main():
         linked_count = issue.get("linked_issue_count", 0)
         support_count = count_support_links(issue)
 
+        resolution_info = assess_resolution(issue)
+
         # Determine recommendation
         if dup_key:
             recommendation = "duplicate"
@@ -389,14 +498,17 @@ def main():
             "recurrence_score": round(rec_score, 2),
             "linked_issue_count": linked_count,
             "linked_support_count": support_count,
+            "resolution": resolution_info["resolution"],
+            "resolution_detail": resolution_info["resolution_detail"],
+            "resolution_outline": resolution_info["resolution_outline"],
+            "dev_links": resolution_info["dev_links"],
         })
 
     # Output summary table
-    print("| # | Key | Type | Summary | Score | Missing | Recommendation | Signals |")
-    print("|---|-----|------|---------|-------|---------|----------------|---------|")
+    print("| # | Key | Type | Summary | Score | Resolution | Recommendation | Signals |")
+    print("|---|-----|------|---------|-------|------------|----------------|---------|")
     for i, r in enumerate(results, 1):
         summary_short = r["summary"][:50] + ("..." if len(r["summary"]) > 50 else "")
-        missing_str = ", ".join(r["missing_sections"]) if r["missing_sections"] else "None"
 
         if r["recommendation"] == "duplicate":
             rec_display = "Duplicate of %s [%.0f%%]" % (r["duplicate_of"], r["duplicate_score"] * 100)
@@ -417,14 +529,24 @@ def main():
         print("| %d | %s | %s | %s | %d/%d | %s | %s | %s |" % (
             i, r["key"], r.get("issue_type", ""), summary_short,
             r["filled_count"], r["total_sections"],
-            missing_str, rec_display, signals_str,
+            r.get("resolution_detail", ""), rec_display, signals_str,
         ))
 
     # Summary counts
     ready = sum(1 for r in results if r["recommendation"] == "ready")
     more_info = sum(1 for r in results if r["recommendation"] == "more_info")
     duplicates = sum(1 for r in results if r["recommendation"] == "duplicate")
+
+    # Resolution breakdown
+    resolution_counts = {}
+    for r in results:
+        res = r.get("resolution", "unresolved")
+        resolution_counts[res] = resolution_counts.get(res, 0) + 1
+
     print("\nSummary: %d ready, %d need more info, %d duplicates" % (ready, more_info, duplicates))
+    print("Resolution: %s" % ", ".join(
+        "%d %s" % (v, k) for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1])
+    ))
 
     # Write JSON output (always — used by agent quality assessment step)
     with open("/tmp/triage_analysis.json", "w") as f:
@@ -458,6 +580,49 @@ def main():
         "",
     ]
 
+    # Resolution overview — grouped by status for PM scanning
+    lines.append("## Resolution Status")
+    lines.append("")
+
+    resolution_groups = {}
+    for r in results:
+        res = r.get("resolution", "unresolved")
+        if res not in resolution_groups:
+            resolution_groups[res] = []
+        resolution_groups[res].append(r)
+
+    # Order: unresolved first (needs attention), then in_progress, roadmapped, blocked, resolved, rejected
+    resolution_order = ["unresolved", "blocked", "in_progress", "roadmapped", "resolved", "rejected"]
+    resolution_labels = {
+        "unresolved": "Unresolved",
+        "blocked": "Blocked — More Info Required",
+        "in_progress": "In Progress",
+        "roadmapped": "Ready for Development",
+        "resolved": "Resolved",
+        "rejected": "Rejected",
+    }
+
+    for res_key in resolution_order:
+        group = resolution_groups.get(res_key, [])
+        if not group:
+            continue
+        lines.append("### %s (%d)" % (resolution_labels.get(res_key, res_key), len(group)))
+        lines.append("")
+        for r in group:
+            lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
+            lines.append("- **Resolution:** %s" % r.get("resolution_detail", ""))
+            outline = r.get("resolution_outline", [])
+            if outline:
+                lines.append("- **What was done:**")
+                for item in outline:
+                    lines.append("  - %s" % item)
+            elif res_key in ("resolved", "rejected"):
+                lines.append("- **What was done:** *(no subtasks or dev tickets linked)*")
+            if r.get("linked_issue_count", 0) > 0:
+                lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
+            lines.append("")
+    lines.append("")
+
     # Group by recommendation
     for rec_type, rec_label in [("duplicate", "Potential Duplicates"), ("more_info", "Need More Information"), ("ready", "Ready for Development")]:
         group = [r for r in results if r["recommendation"] == rec_type]
@@ -468,6 +633,7 @@ def main():
         for r in group:
             lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
             lines.append("- **Status:** %s" % r["status"])
+            lines.append("- **Resolution:** %s" % r.get("resolution_detail", ""))
             lines.append("- **Score:** %d/%d" % (r["filled_count"], r["total_sections"]))
             if r["missing_sections"]:
                 lines.append("- **Missing:** %s" % ", ".join(r["missing_sections"]))
@@ -477,6 +643,11 @@ def main():
                 lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (jira_link(r["recurrence_of"], base_url), r["recurrence_score"] * 100))
             if r.get("linked_issue_count", 0) > 0:
                 lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
+            if r.get("dev_links"):
+                for d in r["dev_links"]:
+                    lines.append("- **Dev ticket:** %s — %s (%s, %s)" % (
+                        jira_link(d["key"], base_url), d["summary"][:60], d["issue_type"], d["status"],
+                    ))
             lines.append("")
 
     with open(report_path, "w") as f:

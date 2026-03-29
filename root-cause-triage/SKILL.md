@@ -128,6 +128,7 @@ python3 ~/.claude/skills/root-cause-triage/enrich.py apply [--issue KEY] [--dry-
 ```
 
 This reads the agent results and updates the Markdown files:
+- Adds `classification` to frontmatter (one of: `code_bug`, `feature_request`, `config_issue`, `docs_gap`, `process_gap`)
 - Inserts a "## Root Cause Analysis" section above Description (first section after the heading)
 - Replaces extractive `**Summary:**` lines with agent-quality summaries
 
@@ -151,7 +152,9 @@ Run structural and semantic analysis on the collected Obsidian knowledge base. P
 python3 ~/.claude/skills/root-cause-triage/analyze.py [--issue KEY] [--status STATUS] [--all-statuses]
 ```
 
-This reads collected data (from `/tmp/triage_collect/` or Obsidian files), runs template completeness scoring and text-similarity duplicate detection against the full knowledge base, writes an analysis report to `{TRIAGE_OUTPUT_PATH}/Analysis/`, and saves results to `/tmp/triage_analysis.json`.
+This reads collected data (from `/tmp/triage_collect/` or Obsidian files), runs template completeness scoring, text-similarity duplicate detection, and resolution status assessment against the full knowledge base, writes an analysis report to `{TRIAGE_OUTPUT_PATH}/Analysis/`, and saves results to `/tmp/triage_analysis.json`.
+
+Resolution status is derived from board column + linked dev tickets (via "blocks", "is implemented by", "implements" relationships). Values: `unresolved`, `in_progress`, `roadmapped`, `resolved`, `rejected`, `blocked`.
 
 If `analyze.py` exits with a non-zero status, display the error and stop.
 

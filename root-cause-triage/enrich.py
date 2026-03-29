@@ -192,6 +192,15 @@ def cmd_apply(args):
         with open(md_path) as f:
             content = f.read()
 
+        # Insert classification into frontmatter
+        classification = enrichment.get("classification", "")
+        if classification and classification != "unknown":
+            if "classification:" in content:
+                content = re.sub(r'^classification:.*$', 'classification: %s' % classification, content, flags=re.MULTILINE)
+            else:
+                # Insert before the closing --- of frontmatter
+                content = re.sub(r'^(linked_issue_count:.*)\n---', r'\1\nclassification: %s\n---' % classification, content, flags=re.MULTILINE)
+
         # Insert or replace Root Cause Analysis section (before Description)
         analysis = enrichment.get("root_cause_analysis", "")
         if analysis:
