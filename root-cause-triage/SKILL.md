@@ -261,6 +261,7 @@ Read the analysis report that `analyze.py` wrote to `{TRIAGE_OUTPUT_PATH}/Analys
 | Key | Quality | Note | Dup Assessment | Recurrence | Recommended Action |
 |-----|---------|------|----------------|------------|--------------------|
 | [KEY](JIRA_BASE_URL/browse/KEY) | good/thin/vague | note or -- | confirmed/unlikely/n/a | likely/unlikely/n/a | ready/more_info/duplicate/skip |
+{... one row per issue, no blank lines between rows ...}
 
 ### Issues Flagged as Thin or Vague
 {Per-issue breakdown for quality != "good"}
@@ -282,8 +283,11 @@ Read the analysis report that `analyze.py` wrote to `{TRIAGE_OUTPUT_PATH}/Analys
 | Key | Raw Quality | Post-Enrichment | Note | Recurrence | Action |
 {Mark upgrades with **↑**}
 
-### Still Needs More Information
-{Issues that remain thin/vague even after enrichment}
+### Needs More Information
+{Issues where post-enrichment action is "more_info" — still thin/vague after enrichment, need human review}
+
+### Ready for Development
+{Issues where post-enrichment action is "ready" — sufficient combined evidence for a PM to scope work}
 ```
 
 **Post-Enrichment Duplicate & Overlap Analysis** (from Step A2c):
