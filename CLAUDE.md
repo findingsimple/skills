@@ -31,9 +31,12 @@ Each skill lives in its own directory with a `SKILL.md` file:
     summarize.py        # Mode: collect — read per-issue JSON, generate Obsidian Markdown with extractive summaries
     enrich.py           # Mode: collect — prepare agent batches (prepare) and apply enriched summaries (apply)
     ENRICH_PROMPT.md    # Agent prompt template for linked issue summarization and root cause synthesis
-    analyze.py          # Mode: analyze — read collected data, score completeness, detect duplicates, write Obsidian report
-    fetch.py            # Mode: triage — single-pass fetch + analysis for the triage workflow
-    triage.py           # Mode: triage — transition execution, comment posting, history writing
+    autofill.py         # Mode: collect — auto-fill missing template sections using agent synthesis
+    AUTOFILL_PROMPT.md  # Agent prompt template for template section autofill
+    analyze.py          # Mode: analyze — structural scoring, duplicate detection, loads enrichment data, writes report
+    QUALITY_PROMPT.md   # Agent prompt for raw quality assessment (analyze Step A2a)
+    POST_ENRICH_QUALITY_PROMPT.md  # Agent prompt for post-enrichment quality assessment (analyze Step A2b)
+    DUPLICATE_PROMPT.md # Agent prompt for semantic duplicate detection (analyze Step A2c)
   sprint-metrics/
     SKILL.md
     jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, jira_search_all, gitlab_get)

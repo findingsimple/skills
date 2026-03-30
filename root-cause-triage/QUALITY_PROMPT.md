@@ -67,6 +67,8 @@ For each ticket, assess:
 - `"duplicate"` — Content confirms the duplicate flag from text similarity.
 - `"skip"` — The ticket appears to already be in progress, has been reassigned, or is otherwise not appropriate for assessment at this time.
 
+**Constraint:** `quality` and `recommended_action` must be consistent — `"good"` maps to `"ready"` (unless duplicate or skip applies), and `"thin"`/`"vague"` maps to `"more_info"`. Do not return `"good"` with `"more_info"` or `"thin"` with `"ready"`.
+
 Return a JSON array — one object per ticket — with this structure:
 [
   {

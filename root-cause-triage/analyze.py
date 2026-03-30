@@ -37,7 +37,7 @@ CLOSED_STATUSES = {"done", "closed", "completed", "resolved", "completed / roadm
 def parse_args():
     parser = argparse.ArgumentParser(description="Analyze collected root cause issues")
     parser.add_argument("--issue", help="Analyze a single issue by key")
-    parser.add_argument("--status", default="To Triage", help="Filter by status (default: 'To Triage')")
+    parser.add_argument("--status", default=None, help="Filter by status (default: all statuses)")
     parser.add_argument("--all-statuses", action="store_true", help="Analyze all statuses")
     parser.add_argument("--output-json", action="store_true", help="(no-op, JSON is always written to /tmp/triage_analysis.json)")
     return parser.parse_args()
@@ -409,6 +409,115 @@ def jira_link(key, base_url):
     return key
 
 
+def load_enrichment_data(enrich_dir="/tmp/triage_enrich"):
+    """Load enrichment results (classification, root cause analysis) keyed by issue key."""
+    enrichments = {}
+    if not os.path.isdir(enrich_dir):
+        return enrichments
+    for filename in os.listdir(enrich_dir):
+        if filename.startswith("result_") and filename.endswith(".json"):
+            filepath = os.path.join(enrich_dir, filename)
+            try:
+                with open(filepath) as f:
+                    data = json.load(f)
+                enrichments[data["key"]] = data
+            except Exception:
+                pass
+    return enrichments
+
+
+def summarize_linked_issues(issue):
+    """Build a compact summary of linked issue activity."""
+    linked = issue.get("linked_issues", {})
+    if not isinstance(linked, dict):
+        return []
+    parts = []
+    for group_label, items in linked.items():
+        if not isinstance(items, list) or not items:
+            continue
+        # Skip dev link types — those are shown separately
+        if group_label.lower() in DEV_LINK_TYPES:
+            continue
+        statuses = {}
+        for item in items:
+            s = item.get("status", "Unknown")
+            statuses[s] = statuses.get(s, 0) + 1
+        status_summary = ", ".join("%d %s" % (v, k) for k, v in sorted(statuses.items(), key=lambda x: -x[1]))
+        parts.append("%s: %d (%s)" % (group_label.title(), len(items), status_summary))
+    return parts
+
+
+def build_issue_detail(r, enrichment, base_url):
+    """Build the detail lines for a single issue in the report."""
+    lines = []
+
+    # Classification from enrichment
+    classification = ""
+    if enrichment:
+        classification = enrichment.get("classification", "")
+    if classification and classification != "unknown":
+        lines.append("- **Classification:** %s" % classification.replace("_", " "))
+
+    # Recommendation badge
+    if r["recommendation"] == "duplicate":
+        lines.append("- **Recommendation:** Duplicate of %s (%.0f%% match)" % (
+            jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
+    elif r["recommendation"] == "ready":
+        lines.append("- **Recommendation:** Ready for development")
+    else:
+        lines.append("- **Recommendation:** Needs more information")
+
+    # Template completeness
+    lines.append("- **Template score:** %d/%d" % (r["filled_count"], r["total_sections"]))
+    if r["missing_sections"]:
+        lines.append("- **Missing sections:** %s" % ", ".join(r["missing_sections"]))
+
+    # Root cause analysis from enrichment (truncated for report)
+    if enrichment:
+        rca = enrichment.get("root_cause_analysis", "")
+        if rca:
+            # Show first 200 chars as a preview
+            preview = rca[:200].strip()
+            if len(rca) > 200:
+                preview += "..."
+            lines.append("- **Root cause:** %s" % preview)
+
+    # Dev links
+    dev_links = r.get("dev_links", [])
+    if dev_links:
+        for d in dev_links:
+            lines.append("- **Dev ticket:** %s — %s (%s, %s)" % (
+                jira_link(d["key"], base_url), d["summary"][:60], d["issue_type"], d["status"],
+            ))
+
+    # Subtask / resolution outline
+    outline = r.get("resolution_outline", [])
+    subtask_items = [item for item in outline if item.startswith("Subtask:")]
+    team_items = [item for item in outline if item.startswith("Team:")]
+    if subtask_items:
+        lines.append("- **Subtasks:**")
+        for item in subtask_items:
+            lines.append("  - %s" % item.replace("Subtask: ", ""))
+    if team_items:
+        for item in team_items:
+            lines.append("- **%s**" % item)
+
+    # Linked issue summary
+    linked_parts = r.get("linked_summary_parts", [])
+    if linked_parts:
+        lines.append("- **Linked issues:** %d total — %s" % (
+            r.get("linked_issue_count", 0), "; ".join(linked_parts)))
+    elif r.get("linked_issue_count", 0) > 0:
+        lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
+
+    # Recurrence signal
+    if r.get("recurrence_of"):
+        lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (
+            jira_link(r["recurrence_of"], base_url), r["recurrence_score"] * 100))
+
+    return lines
+
+
 def main():
     args = parse_args()
     output_path = os.environ.get("TRIAGE_OUTPUT_PATH", "")
@@ -438,13 +547,18 @@ def main():
 
     print("Loaded %d issues" % len(all_issues), file=sys.stderr)
 
+    # Load enrichment data for classification + root cause analysis
+    enrichments = load_enrichment_data()
+    if enrichments:
+        print("Loaded %d enrichment results" % len(enrichments), file=sys.stderr)
+
     # Filter issues for analysis
     if args.issue:
         target_issues = [i for i in all_issues if i["key"] == args.issue]
         if not target_issues:
             print("ERROR: Issue %s not found in collected data" % args.issue)
             sys.exit(1)
-    elif args.all_statuses:
+    elif args.all_statuses or args.status is None:
         target_issues = all_issues
     else:
         target_issues = [i for i in all_issues if i.get("status", "").lower() == args.status.lower()]
@@ -472,6 +586,9 @@ def main():
 
         resolution_info = assess_resolution(issue)
 
+        # Summarize linked issues for richer context
+        linked_summary_parts = summarize_linked_issues(issue)
+
         # Determine recommendation
         if dup_key:
             recommendation = "duplicate"
@@ -498,6 +615,7 @@ def main():
             "recurrence_score": round(rec_score, 2),
             "linked_issue_count": linked_count,
             "linked_support_count": support_count,
+            "linked_summary_parts": linked_summary_parts,
             "resolution": resolution_info["resolution"],
             "resolution_detail": resolution_info["resolution_detail"],
             "resolution_outline": resolution_info["resolution_outline"],
@@ -543,10 +661,21 @@ def main():
         res = r.get("resolution", "unresolved")
         resolution_counts[res] = resolution_counts.get(res, 0) + 1
 
+    # Classification breakdown (from enrichment data)
+    classification_counts = {}
+    for r in results:
+        enrichment = enrichments.get(r["key"], {})
+        cls = enrichment.get("classification", "unknown")
+        classification_counts[cls] = classification_counts.get(cls, 0) + 1
+
     print("\nSummary: %d ready, %d need more info, %d duplicates" % (ready, more_info, duplicates))
     print("Resolution: %s" % ", ".join(
         "%d %s" % (v, k) for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1])
     ))
+    if classification_counts:
+        print("Classification: %s" % ", ".join(
+            "%d %s" % (v, k.replace("_", " ")) for k, v in sorted(classification_counts.items(), key=lambda x: -x[1])
+        ))
 
     # Write JSON output (always — used by agent quality assessment step)
     with open("/tmp/triage_analysis.json", "w") as f:
@@ -572,82 +701,69 @@ def main():
         "## Summary",
         "",
         "- **%d** issues analyzed (from %d total collected)" % (len(results), len(all_issues)),
-        "- **%d** ready for development" % ready,
-        "- **%d** need more information" % more_info,
-        "- **%d** potential duplicates" % duplicates,
-        "",
-        "## Issues by Recommendation",
         "",
     ]
 
-    # Resolution overview — grouped by status for PM scanning
-    lines.append("## Resolution Status")
+    # Resolution breakdown
+    lines.append("**By resolution:**")
+    for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1]):
+        lines.append("- %s: %d" % (k, v))
     lines.append("")
 
-    resolution_groups = {}
-    for r in results:
-        res = r.get("resolution", "unresolved")
-        if res not in resolution_groups:
-            resolution_groups[res] = []
-        resolution_groups[res].append(r)
+    # Recommendation breakdown
+    lines.append("**By recommendation:**")
+    lines.append("- Ready for development: %d" % ready)
+    lines.append("- Needs more information: %d" % more_info)
+    lines.append("- Potential duplicates: %d" % duplicates)
+    lines.append("")
 
-    # Order: unresolved first (needs attention), then in_progress, roadmapped, blocked, resolved, rejected
-    resolution_order = ["unresolved", "blocked", "in_progress", "roadmapped", "resolved", "rejected"]
-    resolution_labels = {
-        "unresolved": "Unresolved",
-        "blocked": "Blocked — More Info Required",
-        "in_progress": "In Progress",
-        "roadmapped": "Ready for Development",
-        "resolved": "Resolved",
-        "rejected": "Rejected",
-    }
-
-    for res_key in resolution_order:
-        group = resolution_groups.get(res_key, [])
-        if not group:
-            continue
-        lines.append("### %s (%d)" % (resolution_labels.get(res_key, res_key), len(group)))
+    # Classification breakdown
+    if classification_counts:
+        lines.append("**By classification:**")
+        for k, v in sorted(classification_counts.items(), key=lambda x: -x[1]):
+            lines.append("- %s: %d" % (k.replace("_", " "), v))
         lines.append("")
-        for r in group:
-            lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
-            lines.append("- **Resolution:** %s" % r.get("resolution_detail", ""))
-            outline = r.get("resolution_outline", [])
-            if outline:
-                lines.append("- **What was done:**")
-                for item in outline:
-                    lines.append("  - %s" % item)
-            elif res_key in ("resolved", "rejected"):
-                lines.append("- **What was done:** *(no subtasks or dev tickets linked)*")
-            if r.get("linked_issue_count", 0) > 0:
-                lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
-            lines.append("")
+
+    # Compact recommendation table
+    lines.append("## Recommendations Overview")
+    lines.append("")
+    lines.append("| Key | Summary | Board Column | Score | Classification | Recommendation | Links |")
+    lines.append("|-----|---------|--------------|-------|----------------|----------------|-------|")
+    for r in results:
+        summary_short = r["summary"][:50] + ("..." if len(r["summary"]) > 50 else "")
+        enrichment = enrichments.get(r["key"], {})
+        cls = enrichment.get("classification", "").replace("_", " ") if enrichment else ""
+
+        if r["recommendation"] == "duplicate":
+            rec_display = "Duplicate of %s" % r["duplicate_of"]
+        elif r["recommendation"] == "ready":
+            rec_display = "Ready"
+        else:
+            rec_display = "More info needed"
+
+        lines.append("| %s | %s | %s | %d/%d | %s | %s | %d |" % (
+            jira_link(r["key"], base_url), summary_short,
+            r.get("resolution_detail", "").split(" — ")[0],  # board column without dev ticket details
+            r["filled_count"], r["total_sections"],
+            cls, rec_display, r.get("linked_issue_count", 0),
+        ))
     lines.append("")
 
-    # Group by recommendation
-    for rec_type, rec_label in [("duplicate", "Potential Duplicates"), ("more_info", "Need More Information"), ("ready", "Ready for Development")]:
+    # Detailed sections grouped by recommendation
+    for rec_type, rec_label in [("duplicate", "Potential Duplicates"), ("more_info", "Needs More Information"), ("ready", "Ready for Development")]:
         group = [r for r in results if r["recommendation"] == rec_type]
         if not group:
             continue
-        lines.append("### %s (%d)" % (rec_label, len(group)))
+        lines.append("## %s (%d)" % (rec_label, len(group)))
         lines.append("")
         for r in group:
+            enrichment = enrichments.get(r["key"], {})
             lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
-            lines.append("- **Status:** %s" % r["status"])
-            lines.append("- **Resolution:** %s" % r.get("resolution_detail", ""))
-            lines.append("- **Score:** %d/%d" % (r["filled_count"], r["total_sections"]))
-            if r["missing_sections"]:
-                lines.append("- **Missing:** %s" % ", ".join(r["missing_sections"]))
-            if r.get("duplicate_of"):
-                lines.append("- **Duplicate of:** %s (%.0f%% match)" % (jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
-            if r.get("recurrence_of"):
-                lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (jira_link(r["recurrence_of"], base_url), r["recurrence_score"] * 100))
-            if r.get("linked_issue_count", 0) > 0:
-                lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
-            if r.get("dev_links"):
-                for d in r["dev_links"]:
-                    lines.append("- **Dev ticket:** %s — %s (%s, %s)" % (
-                        jira_link(d["key"], base_url), d["summary"][:60], d["issue_type"], d["status"],
-                    ))
+            if rec_type == "duplicate":
+                lines.append("- **Duplicate of:** %s (%.0f%% match)" % (
+                    jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
+            detail_lines = build_issue_detail(r, enrichment, base_url)
+            lines.extend(detail_lines)
             lines.append("")
 
     with open(report_path, "w") as f:
