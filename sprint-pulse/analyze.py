@@ -295,6 +295,40 @@ def main():
     with open("/tmp/sprint_pulse_alerts.json", "w") as f:
         json.dump(alerts, f, indent=2, default=str)
 
+    # Write pre-filtered comment data for the outstanding questions sub-agent.
+    # Only includes issues/tickets that have comments or MR notes, stripping
+    # all other fields to keep the file small and focused.
+    comment_items = []
+    for issue in issues:
+        has_comments = bool(issue.get("comments"))
+        mr_notes = []
+        mr_links = []
+        for mr in issue.get("merge_requests", []):
+            if mr.get("notes"):
+                mr_notes.extend(mr["notes"])
+                mr_links.append({"iid": mr["iid"], "web_url": mr.get("web_url", "")})
+        if has_comments or mr_notes:
+            comment_items.append({
+                "type": "sprint_issue",
+                "key": issue["key"],
+                "summary": issue.get("summary", ""),
+                "is_active": issue.get("is_active", False),
+                "comments": issue.get("comments", []),
+                "mr_notes": mr_notes,
+                "mr_links": mr_links,
+            })
+    for ticket in support_tickets:
+        if ticket.get("comments"):
+            comment_items.append({
+                "type": "support_ticket",
+                "key": ticket["key"],
+                "summary": ticket.get("summary", ""),
+                "status": ticket.get("status", ""),
+                "comments": ticket.get("comments", []),
+            })
+    with open("/tmp/sprint_pulse_comments.json", "w") as f:
+        json.dump(comment_items, f, indent=2, default=str)
+
     # Print summary
     stale_count = len(stale_alerts)
     support_new = len(support_alerts["new"])

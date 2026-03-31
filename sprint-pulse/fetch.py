@@ -199,9 +199,11 @@ def main():
     print("Found %d MRs linked to active issues" % mr_count, file=sys.stderr)
 
     # Step 4: Fetch support tickets if configured
-    # Fetches all tickets in the support project with the team label (any column)
+    # Requires both a support project AND team filtering (label or Team field).
+    # Without team filtering, the query would return ALL tickets in the project.
     support_data = []
-    if args.support_project_key:
+    has_team_filter = bool(args.support_label or args.support_team_field)
+    if args.support_project_key and has_team_filter:
         print("Fetching support tickets...", file=sys.stderr)
 
         jql_parts = ["project = %s" % args.support_project_key]
@@ -217,11 +219,28 @@ def main():
                 team_clauses.append("labels in (%s)" % label_list)
         if args.support_team_field:
             values = [v.strip() for v in args.support_team_field.split(",") if v.strip()]
-            if len(values) == 1:
-                team_clauses.append('cf[10600] = "%s"' % values[0])
-            elif len(values) > 1:
-                value_list = ", ".join('"%s"' % v for v in values)
-                team_clauses.append("cf[10600] in (%s)" % value_list)
+            # The Team field (atlassian-team type) requires UUIDs in JQL, not display names.
+            # Resolve each name to its UUID by looking up a known ticket with that team label.
+            resolved_ids = []
+            for name in values:
+                try:
+                    lookup_jql = 'project = %s AND labels = "team-%s" AND cf[10600] is not EMPTY ORDER BY created DESC' % (
+                        args.support_project_key, name.lower())
+                    lookup = jira_search_all(base_url, auth, lookup_jql, "customfield_10600")
+                    for item in lookup[:5]:
+                        team_obj = item.get("fields", {}).get("customfield_10600")
+                        if isinstance(team_obj, dict) and team_obj.get("name", "").upper() == name.upper():
+                            resolved_ids.append(team_obj["id"])
+                            break
+                    else:
+                        print("WARNING: Could not resolve Team field UUID for '%s'" % name, file=sys.stderr)
+                except Exception as e:
+                    print("WARNING: Team field UUID lookup failed for '%s': %s" % (name, e), file=sys.stderr)
+            if len(resolved_ids) == 1:
+                team_clauses.append('cf[10600] = "%s"' % resolved_ids[0])
+            elif len(resolved_ids) > 1:
+                id_list = ", ".join('"%s"' % tid for tid in resolved_ids)
+                team_clauses.append("cf[10600] in (%s)" % id_list)
         if team_clauses:
             jql_parts.append("(%s)" % " OR ".join(team_clauses))
 
@@ -274,6 +293,8 @@ def main():
 
         except Exception as e:
             print("WARNING: Could not fetch support tickets: %s" % e, file=sys.stderr)
+    elif args.support_project_key and not has_team_filter:
+        print("Skipping support tickets: no team filter configured (SUPPORT_TEAM_LABEL / SUPPORT_TEAM_FIELD_VALUES)", file=sys.stderr)
 
     # Step 5: Save all data
     output = {

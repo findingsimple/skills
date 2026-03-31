@@ -133,10 +133,10 @@ This reads `/tmp/sprint_pulse_data.json` and writes `/tmp/sprint_pulse_alerts.js
 ### Step 6 — Detect outstanding questions (sub-agent)
 
 Spawn a **general-purpose agent** with:
-- The path `/tmp/sprint_pulse_data.json`
+- The path `/tmp/sprint_pulse_comments.json` (pre-filtered by `analyze.py` to only include items with comments or MR notes)
 - The full text of the **analysis instructions** below
 
-The agent must read `/tmp/sprint_pulse_data.json` via Bash `cat` (not the Read tool), analyse the data, and return a structured list of outstanding questions. Each question should include: issue key, summary, source (Jira comment or MR note with link), question text (first 150 chars), time ago, and who asked it. If no questions are found, return "No outstanding questions detected."
+The agent must read `/tmp/sprint_pulse_comments.json` via Bash `cat` (not the Read tool), analyse the data, and return a structured list of outstanding questions. Each question should include: issue key, summary, source (Jira comment or MR note with link), question text (first 150 chars), time ago, and who asked it. If no questions are found, return "No outstanding questions detected."
 
 The main agent resumes from **Step 7** with the returned questions.
 
