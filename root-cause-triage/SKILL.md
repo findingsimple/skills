@@ -31,10 +31,12 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 | `ENRICH_PROMPT.md` | Agent prompt template for linked issue summarization and root cause synthesis |
 | `autofill.py` | Mode: collect — auto-fill missing template sections for 0/5 issues using agent synthesis |
 | `AUTOFILL_PROMPT.md` | Agent prompt template for template section autofill |
-| `analyze.py` | Mode: analyze — structural scoring, duplicate detection, loads enrichment data, writes report + `/tmp/triage_analysis.json` |
-| `QUALITY_PROMPT.md` | Agent prompt for raw quality assessment (used by analyze mode Step A2a) |
-| `POST_ENRICH_QUALITY_PROMPT.md` | Agent prompt for post-enrichment quality assessment (used by analyze mode Step A2b) |
-| `DUPLICATE_PROMPT.md` | Agent prompt for semantic duplicate detection using enriched data (used by analyze mode Step A2c) |
+| `analyze.py` | Mode: analyze — structural scoring, duplicate detection, loads enrichment + autofill data, writes Raw Analysis + Enriched Analysis reports + `/tmp/triage_analysis.json` |
+| `build_prompts.py` | Mode: analyze — builds agent batch prompts from analysis JSON + enrichment/autofill data, writes to `/tmp/triage_prompts/` |
+| `merge_results.py` | Mode: analyze — collects agent output files from `/tmp/triage_prompts/`, merges into `/tmp/triage_analysis_enriched.json` + `/tmp/triage_duplicates/clusters.json` |
+| `QUALITY_PROMPT.md` | Agent prompt reference for raw quality assessment (Step A2a) — embedded in `build_prompts.py` |
+| `POST_ENRICH_QUALITY_PROMPT.md` | Agent prompt reference for post-enrichment quality assessment (Step A2b) — embedded in `build_prompts.py` |
+| `DUPLICATE_PROMPT.md` | Agent prompt reference for semantic duplicate detection (Step A2c) — embedded in `build_prompts.py` |
 
 ## Instructions
 
@@ -183,7 +185,9 @@ This reads agent results and updates Markdown files:
 
 ## Mode: Analyze
 
-Run structural and semantic analysis on the collected Obsidian knowledge base. Produces an informational report — no Jira mutations.
+Run structural and semantic analysis on the collected Obsidian knowledge base. Produces two informational reports — no Jira mutations:
+- **Raw Analysis** — Jira data only (template scores, text-similarity duplicates, structural signals)
+- **Enriched Analysis** — full picture with classification, root cause, autofill, and semantic duplicates
 
 ### Step A1 — Run analyze.py
 
@@ -193,71 +197,85 @@ python3 ~/.claude/skills/root-cause-triage/analyze.py [--issue KEY] [--status ST
 
 Analyzes all statuses by default. Pass `--status "To Triage"` to filter to a single board column.
 
-This reads collected data (from `/tmp/triage_collect/` or Obsidian files), loads enrichment results (from `/tmp/triage_enrich/result_*.json`) for classification and root cause previews, runs template completeness scoring, text-similarity duplicate detection, and resolution status assessment against the full knowledge base, writes an analysis report to `{TRIAGE_OUTPUT_PATH}/Analysis/`, and saves results to `/tmp/triage_analysis.json`.
+This reads collected data (from `/tmp/triage_collect/` or Obsidian files), loads enrichment results (from `/tmp/triage_enrich/result_*.json`) and autofill results (from `/tmp/triage_autofill/result_*.json`), runs template completeness scoring, text-similarity duplicate detection, and resolution status assessment against the full knowledge base, and writes two reports:
+
+- `{TRIAGE_OUTPUT_PATH}/Analysis/Raw Analysis - {YYYY-MM-DD}.md`
+- `{TRIAGE_OUTPUT_PATH}/Analysis/Enriched Analysis - {YYYY-MM-DD}.md`
+
+Results are also saved to `/tmp/triage_analysis.json`.
 
 Resolution status is derived from board column + linked dev tickets (via "blocks", "is implemented by", "implements" relationships). Values: `unresolved`, `in_progress`, `roadmapped`, `resolved`, `rejected`, `blocked`.
 
 If `analyze.py` exits with a non-zero status, display the error and stop.
 
-### Step A2a — Raw quality assessment
-
-Assesses ticket quality based on **raw Jira descriptions only**. This tells you which Jira tickets need their descriptions backfilled — useful signal independent of the knowledge base.
-
-Read `/tmp/triage_analysis.json` and load triage history:
+### Step A2 — Build agent prompts
 
 ```bash
-cat ~/.claude/skills/root-cause-triage/triage_history.json 2>/dev/null || echo "[]"
+python3 ~/.claude/skills/root-cause-triage/build_prompts.py all [--batch-size 10]
 ```
 
-Read [QUALITY_PROMPT.md](QUALITY_PROMPT.md) for the full agent prompt. Build it by iterating over all issues in the analysis JSON, using each issue's `description` field (already truncated to 800 chars by analyze.py).
+This builds all three prompt types from `/tmp/triage_analysis.json`:
+- **raw-quality** (A2a) — assesses ticket quality based on raw Jira descriptions only
+- **post-enrich-quality** (A2b) — assesses quality using combined evidence (raw + enrichment + autofill)
+- **duplicates** (A2c) — semantic duplicate detection using enriched root cause analyses
 
-Spawn a `general-purpose` agent using **model: opus** with the constructed prompt.
+Output: `/tmp/triage_prompts/{type}/batch_N.txt` + `batches.json` manifest per type.
 
-Parse the agent's JSON response. If the response is not valid JSON, attempt to extract a JSON array from within the response (strip markdown fences or preamble). If that also fails, log the raw response to `/tmp/triage_agent_raw.txt`, inform the user of the failure, and fall back to structural-only results (skip to Step A4).
+Each batch prompt instructs the agent to write its JSON results to a specific output file in `/tmp/triage_prompts/{type}/results_batch_N.json`.
 
-**Batching:** If there are more than 10 issues, process them in batches of 10, spawning a separate agent call for each batch. Run up to 3 batches concurrently. Merge the results before proceeding.
+### Step A2a/A2b — Spawn quality assessment agents
 
-For each issue, merge the agent's `quality`, `quality_note`, `duplicate_assessment`, `recurrence_assessment`, and `recommended_action` with the structural analysis from `/tmp/triage_analysis.json`.
+Read the batch manifests:
+- `/tmp/triage_prompts/raw-quality/batches.json`
+- `/tmp/triage_prompts/post-enrich-quality/batches.json`
 
-Save merged results to `/tmp/triage_analysis_enriched.json` using a bash heredoc.
+For each batch in both manifests, spawn a `general-purpose` agent using **model: opus** with the prompt:
 
-### Step A2b — Post-enrichment quality assessment
+> "Use the Bash tool to run: `cat {batch_file}` — Then follow the instructions in the file exactly."
 
-Assesses ticket quality based on the **combined evidence**: raw description + enrichment data (classification, root cause analysis) + autofill sections (template sections with confidence levels). This tells you which issues are PM-ready given the full knowledge base.
+> **Note:** Agents cannot use the Read tool on `/tmp/` paths due to sandbox permissions. Always instruct agents to use `cat` via the Bash tool to read batch files.
 
-Read [POST_ENRICH_QUALITY_PROMPT.md](POST_ENRICH_QUALITY_PROMPT.md) for the full agent prompt. Build it by iterating over all issues in the analysis JSON, adding for each issue:
+Launch all batches concurrently — they are independent. Run A2a and A2b batches in parallel.
 
-1. **Raw description** from `/tmp/triage_analysis.json`
-2. **Enrichment data** from `/tmp/triage_enrich/result_{KEY}.json` — classification and root cause analysis (truncated to 300 chars)
-3. **Autofill sections** from `/tmp/triage_autofill/result_{KEY}.json` — each section's content (truncated to 300 chars) and confidence level
+### Step A2c — Spawn duplicate detection agent
 
-**Batching:** Same as Step A2a — batches of 10, up to 3 concurrent, model: opus.
+Read `/tmp/triage_prompts/duplicates/batches.json`. Spawn a single `general-purpose` agent using **model: opus** with:
 
-For each issue, add the agent's `post_enrich_quality`, `post_enrich_note`, and `post_enrich_action` to `/tmp/triage_analysis_enriched.json`.
+> "Use the Bash tool to run: `cat {batch_file}` — Then follow the instructions in the file exactly."
 
-### Step A2c — Post-enrichment duplicate detection
+This can run concurrently with A2a/A2b agents.
 
-Runs **semantic** duplicate detection using enriched root cause analyses. This catches duplicates that text similarity on empty descriptions misses — issues describing the same underlying deficiency in different words.
-
-Read [DUPLICATE_PROMPT.md](DUPLICATE_PROMPT.md) for the full agent prompt. Build a single prompt containing all issues with: key, summary, classification, root cause analysis (truncated to 300 chars), and autofill analysis section (truncated to 250 chars).
-
-Spawn a single `general-purpose` agent using **model: opus** with the prompt.
-
-The agent returns two types of clusters:
+The agent identifies two types of clusters:
 - **`duplicate`** — issues describing the same root cause; one is primary, others are duplicates
 - **`related`** — issues sharing a theme but needing separate implementations (useful for prioritisation)
 
-Create the output directory (`mkdir -p /tmp/triage_duplicates`) and save results to `/tmp/triage_duplicates/clusters.json`.
+### Step A2d — Merge agent results
 
-### Step A3 — Update Obsidian report
+Once all agents have completed:
 
-Read the analysis report that `analyze.py` wrote to `{TRIAGE_OUTPUT_PATH}/Analysis/Analysis - {YYYY-MM-DD}.md`. Append three sections:
+```bash
+python3 ~/.claude/skills/root-cause-triage/merge_results.py
+```
 
-**Quality Assessment** (from Step A2a):
+This collects agent output files from `/tmp/triage_prompts/`, merges A2a/A2b results into `/tmp/triage_analysis_enriched.json`, and saves A2c duplicate clusters to `/tmp/triage_duplicates/clusters.json`.
+
+To check which results are present before merging:
+
+```bash
+python3 ~/.claude/skills/root-cause-triage/merge_results.py --check
+```
+
+If any batches are missing, re-spawn the failed agents before merging.
+
+### Step A3 — Update Obsidian reports
+
+Read both reports that `analyze.py` wrote. Update each by replacing the HTML comment placeholders with content from Steps A2a–A2c.
+
+#### Raw Analysis (`Raw Analysis - {YYYY-MM-DD}.md`)
+
+**Replace `<!-- PLACEHOLDER:RAW_QUALITY -->` with Quality Assessment** (from Step A2a):
 
 ```markdown
-## Quality Assessment
-
 | Key | Quality | Note | Dup Assessment | Recurrence | Recommended Action |
 |-----|---------|------|----------------|------------|--------------------|
 | [KEY](JIRA_BASE_URL/browse/KEY) | good/thin/vague | note or -- | confirmed/unlikely/n/a | likely/unlikely/n/a | ready/more_info/duplicate/skip |
@@ -267,51 +285,93 @@ Read the analysis report that `analyze.py` wrote to `{TRIAGE_OUTPUT_PATH}/Analys
 {Per-issue breakdown for quality != "good"}
 ```
 
-**Post-Enrichment Quality Assessment** (from Step A2b):
+**Replace `<!-- PLACEHOLDER:RAW_TOP10 -->` with Top 10 Highest Value Ready Issues:**
+
+Build this by evaluating all "ready" issues (from structural recommendation) using these ranking factors:
+1. **Linked ticket count** — more links = wider impact
+2. **Support ticket count** — direct user pain signal
+3. **Issue age** — how long the problem has been outstanding (use `created` date)
+4. **Related cluster membership** — addressing one issue may address several (use duplicate clusters from Step A2c if available)
+5. **Board column** — issues already in "Ready for Development" on the board are closer to action
 
 ```markdown
-## Post-Enrichment Quality Assessment
+| # | Key | Summary | Links | Support | Age | Reasoning |
+|---|-----|---------|-------|---------|-----|-----------|
+{Top 10 rows with brief reasoning for each}
+```
 
-### Summary Comparison
+#### Enriched Analysis (`Enriched Analysis - {YYYY-MM-DD}.md`)
+
+**Replace `<!-- PLACEHOLDER:ENRICHED_SUMMARY -->` with post-enrichment recommendation counts:**
+
+Derive counts from the merged results in `/tmp/triage_analysis_enriched.json`:
+
+```markdown
+**By recommendation (post-enrichment):**
+- Good (ready for development): N
+- Thin (needs more information): N
+- Vague (needs more information): N
+- Potential duplicates (semantic): N
+```
+
+**Replace `<!-- PLACEHOLDER:ENRICHED_COMPARISON -->` with Raw vs Enriched Comparison:**
+
+```markdown
 | Metric | Raw Assessment | Post-Enrichment |
 |--------|---------------|-----------------|
 | Good | N | N |
 | Thin | N | N |
 | Vague | N | N |
 
-### Post-Enrichment Ratings
-| Key | Raw Quality | Post-Enrichment | Note | Recurrence | Action |
-{Mark upgrades with **↑**}
-
-### Needs More Information
-{Issues where post-enrichment action is "more_info" — still thin/vague after enrichment, need human review}
-
-### Ready for Development
-{Issues where post-enrichment action is "ready" — sufficient combined evidence for a PM to scope work}
+Enrichment upgraded **N** issues from vague/thin to good.
 ```
 
-**Post-Enrichment Duplicate & Overlap Analysis** (from Step A2c):
+**Replace `<!-- PLACEHOLDER:ENRICHED_QUALITY -->` with Post-Enrichment Quality Assessment** (from Step A2b):
 
 ```markdown
-## Post-Enrichment Duplicate & Overlap Analysis
+| Key | Raw Quality | Post-Enrichment | Note | Action |
+|-----|-------------|-----------------|------|--------|
+{Mark upgrades with **↑**, one row per issue}
+```
 
-### Confirmed Duplicates
+**Replace `<!-- PLACEHOLDER:ENRICHED_DUPLICATES -->` with Confirmed Duplicates** (from Step A2c):
+
+```markdown
 | Primary | Duplicate(s) | Rationale |
+|---------|-------------|-----------|
+{One row per duplicate cluster}
+```
 
-### Related Clusters
+**Replace `<!-- PLACEHOLDER:ENRICHED_CLUSTERS -->` with Related Clusters** (from Step A2c):
+
+```markdown
 {Per-theme breakdown with tickets and overlap rationale}
 ```
 
-Use the Write tool to overwrite the report file with the appended content.
+**Replace `<!-- PLACEHOLDER:ENRICHED_TOP10 -->` with Top 10 Highest Value Ready Issues:**
+
+Same ranking factors as the Raw report, plus:
+6. **Quality upgrade** — issues that went from vague/thin to good with high-confidence autofill are stronger candidates
+7. **Classification** — code bugs with clear root cause analysis may be more immediately actionable than feature requests
+
+```markdown
+| # | Key | Summary | Classification | Links | Support | Age | Reasoning |
+|---|-----|---------|---------------|-------|---------|-----|-----------|
+{Top 10 rows with brief reasoning for each}
+```
+
+Use the Read tool to load each report, replace the placeholder comments with the content, and use the Write tool to save.
 
 ### Step A4 — Present results
 
-Show the consolidated summary comparing raw vs post-enrichment quality. Highlight:
+Show a consolidated summary referencing both reports. Highlight:
+- Where to find the **Raw Analysis** (Jira-only assessment) and **Enriched Analysis** (full picture)
 - The quality upgrade from enrichment (how many issues moved from vague/thin to good)
 - Issues that remain thin/vague even after enrichment (need human review)
 - Confirmed semantic duplicates (with rationale)
 - Related clusters (for prioritisation)
+- Top issues from each report's Top 10 list
 - Issues where structural analysis says "ready" but agent says "thin" or "vague" (disagreement)
 - Issues with many linked support tickets (signal of real user impact)
 
-This is informational — the user reviews the report in Obsidian and decides next steps.
+This is informational — the user reviews the reports in Obsidian and decides next steps.

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Analyze collected root cause issues from Obsidian Markdown files."""
+"""Analyze collected root cause issues from Obsidian Markdown files.
+
+Produces two reports:
+- Raw Analysis — structural scoring from Jira data only (no enrichment)
+- Enriched Analysis — full picture with classification, root cause, and autofill
+"""
 
 import argparse
 import json
@@ -128,14 +133,15 @@ def analyze_description(description):
             missing.append(section)
             continue
 
-        is_placeholder = False
+        # Apply all placeholder patterns cumulatively, then check if anything remains.
+        # This catches cases like "- <placeholder text>" where removing angle brackets
+        # leaves "-" and removing dashes leaves nothing.
+        cleaned = content
         for pp in PLACEHOLDER_PATTERNS:
-            cleaned = re.sub(pp, "", content, flags=re.IGNORECASE).strip()
-            if not cleaned:
-                is_placeholder = True
-                break
+            cleaned = re.sub(pp, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+        cleaned = cleaned.strip()
 
-        if is_placeholder:
+        if not cleaned:
             results[section] = False
             missing.append(section)
         else:
@@ -409,6 +415,20 @@ def jira_link(key, base_url):
     return key
 
 
+def sanitize_filename(s, max_len=80):
+    """Sanitize a string for use in filenames (matches summarize.py)."""
+    s = re.sub(r'[/\\:*?"<>|]', '-', s)
+    if len(s) > max_len:
+        s = s[:max_len].rstrip()
+    return s
+
+
+def wiki_link(key, summary):
+    """Return an Obsidian wiki-link for an issue: [[KEY — summary|KEY]]."""
+    safe_summary = sanitize_filename(summary)
+    return "[[%s — %s|%s]]" % (key, safe_summary, key)
+
+
 def load_enrichment_data(enrich_dir="/tmp/triage_enrich"):
     """Load enrichment results (classification, root cause analysis) keyed by issue key."""
     enrichments = {}
@@ -424,6 +444,23 @@ def load_enrichment_data(enrich_dir="/tmp/triage_enrich"):
             except Exception:
                 pass
     return enrichments
+
+
+def load_autofill_data(autofill_dir="/tmp/triage_autofill"):
+    """Load autofill results keyed by issue key."""
+    autofills = {}
+    if not os.path.isdir(autofill_dir):
+        return autofills
+    for filename in os.listdir(autofill_dir):
+        if filename.startswith("result_") and filename.endswith(".json"):
+            filepath = os.path.join(autofill_dir, filename)
+            try:
+                with open(filepath) as f:
+                    data = json.load(f)
+                autofills[data["key"]] = data
+            except Exception:
+                pass
+    return autofills
 
 
 def summarize_linked_issues(issue):
@@ -447,75 +484,267 @@ def summarize_linked_issues(issue):
     return parts
 
 
-def build_issue_detail(r, enrichment, base_url):
-    """Build the detail lines for a single issue in the report."""
+def build_summary_table(group, base_url):
+    """Build a compact summary table for a group of issues with Obsidian wiki-links."""
     lines = []
+    lines.append("| Key | Summary | Score | Created | Links | Detail |")
+    lines.append("|-----|---------|-------|---------|-------|--------|")
+    for r in group:
+        summary_short = r["summary"][:60] + ("..." if len(r["summary"]) > 60 else "")
+        created = r.get("created", "")[:10]
+        lines.append("| %s | %s | %d/%d | %s | %d | %s |" % (
+            jira_link(r["key"], base_url), summary_short,
+            r["filled_count"], r["total_sections"],
+            created, r.get("linked_issue_count", 0),
+            wiki_link(r["key"], r["summary"]),
+        ))
+    lines.append("")
+    return lines
 
-    # Classification from enrichment
-    classification = ""
-    if enrichment:
-        classification = enrichment.get("classification", "")
-    if classification and classification != "unknown":
-        lines.append("- **Classification:** %s" % classification.replace("_", " "))
 
-    # Recommendation badge
-    if r["recommendation"] == "duplicate":
-        lines.append("- **Recommendation:** Duplicate of %s (%.0f%% match)" % (
-            jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
-    elif r["recommendation"] == "ready":
-        lines.append("- **Recommendation:** Ready for development")
+def build_recommendations_table(results, base_url, include_classification=False, enrichments=None):
+    """Build the recommendations table."""
+    lines = []
+    if include_classification:
+        lines.append("| Key | Summary | Recommendation | Classification | Links | Created |")
+        lines.append("|-----|---------|---------------|----------------|-------|---------|")
     else:
-        lines.append("- **Recommendation:** Needs more information")
+        lines.append("| Key | Summary | Recommendation | Links | Created |")
+        lines.append("|-----|---------|---------------|-------|---------|")
 
-    # Template completeness
-    lines.append("- **Template score:** %d/%d" % (r["filled_count"], r["total_sections"]))
-    if r["missing_sections"]:
-        lines.append("- **Missing sections:** %s" % ", ".join(r["missing_sections"]))
+    for r in results:
+        summary_short = r["summary"][:55] + ("..." if len(r["summary"]) > 55 else "")
+        created = r.get("created", "")[:10]
 
-    # Root cause analysis from enrichment (truncated for report)
-    if enrichment:
-        rca = enrichment.get("root_cause_analysis", "")
-        if rca:
-            # Show first 200 chars as a preview
-            preview = rca[:200].strip()
-            if len(rca) > 200:
-                preview += "..."
-            lines.append("- **Root cause:** %s" % preview)
+        if r.get("duplicate_of"):
+            rec_display = "Merge with %s" % r["duplicate_of"]
+        elif r["recommendation"] == "ready":
+            rec_display = "Ready"
+        else:
+            rec_display = "More info needed"
 
-    # Dev links
-    dev_links = r.get("dev_links", [])
-    if dev_links:
-        for d in dev_links:
-            lines.append("- **Dev ticket:** %s — %s (%s, %s)" % (
-                jira_link(d["key"], base_url), d["summary"][:60], d["issue_type"], d["status"],
+        if include_classification and enrichments:
+            enrichment = enrichments.get(r["key"], {})
+            cls = enrichment.get("classification", "").replace("_", " ") if enrichment else ""
+            lines.append("| %s | %s | %s | %s | %d | %s |" % (
+                jira_link(r["key"], base_url), summary_short,
+                rec_display, cls, r.get("linked_issue_count", 0), created,
+            ))
+        else:
+            lines.append("| %s | %s | %s | %d | %s |" % (
+                jira_link(r["key"], base_url), summary_short,
+                rec_display, r.get("linked_issue_count", 0), created,
             ))
 
-    # Subtask / resolution outline
-    outline = r.get("resolution_outline", [])
-    subtask_items = [item for item in outline if item.startswith("Subtask:")]
-    team_items = [item for item in outline if item.startswith("Team:")]
-    if subtask_items:
-        lines.append("- **Subtasks:**")
-        for item in subtask_items:
-            lines.append("  - %s" % item.replace("Subtask: ", ""))
-    if team_items:
-        for item in team_items:
-            lines.append("- **%s**" % item)
-
-    # Linked issue summary
-    linked_parts = r.get("linked_summary_parts", [])
-    if linked_parts:
-        lines.append("- **Linked issues:** %d total — %s" % (
-            r.get("linked_issue_count", 0), "; ".join(linked_parts)))
-    elif r.get("linked_issue_count", 0) > 0:
-        lines.append("- **Linked issues:** %d" % r["linked_issue_count"])
-
-    # Recurrence signal
-    if r.get("recurrence_of"):
-        lines.append("- **Possible recurrence of:** %s (%.0f%%)" % (
-            jira_link(r["recurrence_of"], base_url), r["recurrence_score"] * 100))
-
+    lines.append("")
     return lines
+
+
+def write_raw_report(report_path, results, all_issues, resolution_counts,
+                     ready_count, more_info_count, duplicate_count, base_url, args):
+    """Write the Raw Analysis report (Jira data only, no enrichment)."""
+    now = datetime.now(timezone.utc).isoformat()
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
+    lines = [
+        "---",
+        "type: raw-analysis",
+        "generated_at: %s" % now,
+        "total_analyzed: %d" % len(results),
+        "status_filter: %s" % (args.status if not args.all_statuses else "all"),
+        "---",
+        "",
+        "# Raw Analysis — %s" % date_str,
+        "",
+        "## Summary",
+        "",
+        "- **%d** issues analyzed (from %d total collected)" % (len(results), len(all_issues)),
+        "",
+    ]
+
+    # Resolution breakdown
+    lines.append("**By resolution:**")
+    for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1]):
+        lines.append("- %s: %d" % (k, v))
+    lines.append("")
+
+    # Recommendation breakdown
+    lines.append("**By recommendation:**")
+    lines.append("- Ready for development: %d" % ready_count)
+    lines.append("- Needs more information: %d" % more_info_count)
+    lines.append("- Potential duplicates (text similarity): %d" % duplicate_count)
+    lines.append("")
+
+    # Quality Assessment placeholder
+    lines.append("## Quality Assessment")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:RAW_QUALITY — filled by Step A2a -->")
+    lines.append("")
+
+    # Duplicate & Overlap Analysis — text-similarity results
+    lines.append("## Duplicate & Overlap Analysis")
+    lines.append("")
+
+    # Confirmed duplicates from jaccard
+    dup_results = [r for r in results if r.get("duplicate_of")]
+    lines.append("### Confirmed Duplicates (Text Similarity)")
+    lines.append("")
+    if dup_results:
+        lines.append("| Issue | Duplicate Of | Match |")
+        lines.append("|-------|-------------|-------|")
+        for r in dup_results:
+            lines.append("| %s | %s | %.0f%% |" % (
+                jira_link(r["key"], base_url),
+                jira_link(r["duplicate_of"], base_url),
+                r["duplicate_score"] * 100,
+            ))
+        lines.append("")
+    else:
+        lines.append("No text-similarity duplicates detected above %.0f%% threshold." % (DUPLICATE_THRESHOLD * 100))
+        lines.append("")
+
+    lines.append("### Related Clusters")
+    lines.append("")
+    lines.append("*See Enriched Analysis for semantic cluster analysis using enrichment data.*")
+    lines.append("")
+
+    # Group issues by recommendation (excluding duplicate as a separate group)
+    more_info_group = [r for r in results if r["recommendation"] == "more_info"]
+    ready_group = [r for r in results if r["recommendation"] == "ready"]
+    # Issues flagged as duplicates still appear in more_info or ready based on score
+    for r in results:
+        if r["recommendation"] == "duplicate":
+            if r["filled_count"] >= 4:
+                ready_group.append(r)
+            else:
+                more_info_group.append(r)
+
+    # Needs More Information section
+    lines.append("## Needs More Information (%d)" % len(more_info_group))
+    lines.append("")
+    lines.extend(build_summary_table(more_info_group, base_url))
+
+    # Ready for Development section
+    lines.append("## Ready for Development (%d)" % len(ready_group))
+    lines.append("")
+    lines.extend(build_summary_table(ready_group, base_url))
+
+    # Recommendations table
+    lines.append("## Recommendations")
+    lines.append("")
+    lines.extend(build_recommendations_table(results, base_url))
+
+    # Top 10 placeholder
+    lines.append("## Top 10 Highest Value Ready Issues")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:RAW_TOP10 — filled by Step A3 -->")
+    lines.append("")
+
+    with open(report_path, "w") as f:
+        f.write("\n".join(lines))
+
+
+def write_enriched_report(report_path, results, enrichments, autofills, all_issues,
+                          resolution_counts, classification_counts,
+                          ready_count, more_info_count, duplicate_count, base_url, args):
+    """Write the Enriched Analysis report (full picture with enrichment + autofill)."""
+    now = datetime.now(timezone.utc).isoformat()
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
+    lines = [
+        "---",
+        "type: enriched-analysis",
+        "generated_at: %s" % now,
+        "total_analyzed: %d" % len(results),
+        "enrichment_count: %d" % len(enrichments),
+        "autofill_count: %d" % len(autofills),
+        "status_filter: %s" % (args.status if not args.all_statuses else "all"),
+        "---",
+        "",
+        "# Enriched Analysis — %s" % date_str,
+        "",
+        "## Summary",
+        "",
+        "- **%d** issues analyzed (from %d total collected)" % (len(results), len(all_issues)),
+        "- **%d** enrichment results loaded" % len(enrichments),
+        "- **%d** autofill results loaded" % len(autofills),
+        "",
+    ]
+
+    # Resolution breakdown
+    lines.append("**By resolution:**")
+    for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1]):
+        lines.append("- %s: %d" % (k, v))
+    lines.append("")
+
+    # Classification breakdown
+    if classification_counts:
+        lines.append("**By classification:**")
+        for k, v in sorted(classification_counts.items(), key=lambda x: -x[1]):
+            lines.append("- %s: %d" % (k.replace("_", " "), v))
+        lines.append("")
+
+    # Recommendation breakdown — placeholder replaced by Step A3 with post-enrichment counts
+    lines.append("<!-- PLACEHOLDER:ENRICHED_SUMMARY — filled by Step A3 with post-enrichment recommendation counts -->")
+    lines.append("")
+
+    # Comparison placeholder
+    lines.append("### Raw vs Enriched Comparison")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:ENRICHED_COMPARISON — filled by Step A3 -->")
+    lines.append("")
+
+    # Quality Assessment placeholder
+    lines.append("## Quality Assessment")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:ENRICHED_QUALITY — filled by Step A2b -->")
+    lines.append("")
+
+    # Duplicate & Overlap Analysis placeholder
+    lines.append("## Duplicate & Overlap Analysis")
+    lines.append("")
+    lines.append("### Confirmed Duplicates")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:ENRICHED_DUPLICATES — filled by Step A2c -->")
+    lines.append("")
+    lines.append("### Related Clusters")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:ENRICHED_CLUSTERS — filled by Step A2c -->")
+    lines.append("")
+
+    # Group issues (same logic as raw report)
+    more_info_group = [r for r in results if r["recommendation"] == "more_info"]
+    ready_group = [r for r in results if r["recommendation"] == "ready"]
+    for r in results:
+        if r["recommendation"] == "duplicate":
+            if r["filled_count"] >= 4:
+                ready_group.append(r)
+            else:
+                more_info_group.append(r)
+
+    # Needs More Information section
+    lines.append("## Needs More Information (%d)" % len(more_info_group))
+    lines.append("")
+    lines.extend(build_summary_table(more_info_group, base_url))
+
+    # Ready for Development section
+    lines.append("## Ready for Development (%d)" % len(ready_group))
+    lines.append("")
+    lines.extend(build_summary_table(ready_group, base_url))
+
+    # Recommendations table (with classification)
+    lines.append("## Recommendations")
+    lines.append("")
+    lines.extend(build_recommendations_table(results, base_url, include_classification=True, enrichments=enrichments))
+
+    # Top 10 placeholder
+    lines.append("## Top 10 Highest Value Ready Issues")
+    lines.append("")
+    lines.append("<!-- PLACEHOLDER:ENRICHED_TOP10 — filled by Step A3 -->")
+    lines.append("")
+
+    with open(report_path, "w") as f:
+        f.write("\n".join(lines))
 
 
 def main():
@@ -551,6 +780,11 @@ def main():
     enrichments = load_enrichment_data()
     if enrichments:
         print("Loaded %d enrichment results" % len(enrichments), file=sys.stderr)
+
+    # Load autofill data for template section fills
+    autofills = load_autofill_data()
+    if autofills:
+        print("Loaded %d autofill results" % len(autofills), file=sys.stderr)
 
     # Filter issues for analysis
     if args.issue:
@@ -622,7 +856,7 @@ def main():
             "dev_links": resolution_info["dev_links"],
         })
 
-    # Output summary table
+    # Output summary table to stdout
     print("| # | Key | Type | Summary | Score | Resolution | Recommendation | Signals |")
     print("|---|-----|------|---------|-------|------------|----------------|---------|")
     for i, r in enumerate(results, 1):
@@ -682,94 +916,22 @@ def main():
         json.dump(results, f, indent=2)
     print("\nAnalysis saved to /tmp/triage_analysis.json", file=sys.stderr)
 
-    # Write analysis report to Obsidian
+    # Write both analysis reports to Obsidian
     analysis_dir = os.path.join(output_path, "Analysis")
     os.makedirs(analysis_dir, exist_ok=True)
-    report_path = os.path.join(analysis_dir, "Analysis - %s.md" % datetime.now().strftime("%Y-%m-%d"))
+    date_str = datetime.now().strftime("%Y-%m-%d")
 
-    now = datetime.now(timezone.utc).isoformat()
-    lines = [
-        "---",
-        "type: root-cause-analysis",
-        "generated_at: %s" % now,
-        "total_analyzed: %d" % len(results),
-        "status_filter: %s" % (args.status if not args.all_statuses else "all"),
-        "---",
-        "",
-        "# Root Cause Analysis — %s" % datetime.now().strftime("%Y-%m-%d"),
-        "",
-        "## Summary",
-        "",
-        "- **%d** issues analyzed (from %d total collected)" % (len(results), len(all_issues)),
-        "",
-    ]
+    raw_report_path = os.path.join(analysis_dir, "Raw Analysis - %s.md" % date_str)
+    enriched_report_path = os.path.join(analysis_dir, "Enriched Analysis - %s.md" % date_str)
 
-    # Resolution breakdown
-    lines.append("**By resolution:**")
-    for k, v in sorted(resolution_counts.items(), key=lambda x: -x[1]):
-        lines.append("- %s: %d" % (k, v))
-    lines.append("")
+    write_raw_report(raw_report_path, results, all_issues, resolution_counts,
+                     ready, more_info, duplicates, base_url, args)
+    write_enriched_report(enriched_report_path, results, enrichments, autofills, all_issues,
+                          resolution_counts, classification_counts,
+                          ready, more_info, duplicates, base_url, args)
 
-    # Recommendation breakdown
-    lines.append("**By recommendation:**")
-    lines.append("- Ready for development: %d" % ready)
-    lines.append("- Needs more information: %d" % more_info)
-    lines.append("- Potential duplicates: %d" % duplicates)
-    lines.append("")
-
-    # Classification breakdown
-    if classification_counts:
-        lines.append("**By classification:**")
-        for k, v in sorted(classification_counts.items(), key=lambda x: -x[1]):
-            lines.append("- %s: %d" % (k.replace("_", " "), v))
-        lines.append("")
-
-    # Compact recommendation table
-    lines.append("## Recommendations Overview")
-    lines.append("")
-    lines.append("| Key | Summary | Board Column | Score | Classification | Recommendation | Links |")
-    lines.append("|-----|---------|--------------|-------|----------------|----------------|-------|")
-    for r in results:
-        summary_short = r["summary"][:50] + ("..." if len(r["summary"]) > 50 else "")
-        enrichment = enrichments.get(r["key"], {})
-        cls = enrichment.get("classification", "").replace("_", " ") if enrichment else ""
-
-        if r["recommendation"] == "duplicate":
-            rec_display = "Duplicate of %s" % r["duplicate_of"]
-        elif r["recommendation"] == "ready":
-            rec_display = "Ready"
-        else:
-            rec_display = "More info needed"
-
-        lines.append("| %s | %s | %s | %d/%d | %s | %s | %d |" % (
-            jira_link(r["key"], base_url), summary_short,
-            r.get("resolution_detail", "").split(" — ")[0],  # board column without dev ticket details
-            r["filled_count"], r["total_sections"],
-            cls, rec_display, r.get("linked_issue_count", 0),
-        ))
-    lines.append("")
-
-    # Detailed sections grouped by recommendation
-    for rec_type, rec_label in [("duplicate", "Potential Duplicates"), ("more_info", "Needs More Information"), ("ready", "Ready for Development")]:
-        group = [r for r in results if r["recommendation"] == rec_type]
-        if not group:
-            continue
-        lines.append("## %s (%d)" % (rec_label, len(group)))
-        lines.append("")
-        for r in group:
-            enrichment = enrichments.get(r["key"], {})
-            lines.append("#### %s — %s" % (jira_link(r["key"], base_url), r["summary"]))
-            if rec_type == "duplicate":
-                lines.append("- **Duplicate of:** %s (%.0f%% match)" % (
-                    jira_link(r["duplicate_of"], base_url), r["duplicate_score"] * 100))
-            detail_lines = build_issue_detail(r, enrichment, base_url)
-            lines.extend(detail_lines)
-            lines.append("")
-
-    with open(report_path, "w") as f:
-        f.write("\n".join(lines))
-
-    print("\nReport written to %s" % report_path, file=sys.stderr)
+    print("\nRaw report written to %s" % raw_report_path, file=sys.stderr)
+    print("Enriched report written to %s" % enriched_report_path, file=sys.stderr)
 
 
 if __name__ == "__main__":
