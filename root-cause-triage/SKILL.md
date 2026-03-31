@@ -197,12 +197,7 @@ python3 ~/.claude/skills/root-cause-triage/analyze.py [--issue KEY] [--status ST
 
 Analyzes all statuses by default. Pass `--status "To Triage"` to filter to a single board column.
 
-This reads collected data (from `/tmp/triage_collect/` or Obsidian files), loads enrichment results (from `/tmp/triage_enrich/result_*.json`) and autofill results (from `/tmp/triage_autofill/result_*.json`), runs template completeness scoring, text-similarity duplicate detection, and resolution status assessment against the full knowledge base, and writes two reports:
-
-- `{TRIAGE_OUTPUT_PATH}/Analysis/Raw Analysis - {YYYY-MM-DD}.md`
-- `{TRIAGE_OUTPUT_PATH}/Analysis/Enriched Analysis - {YYYY-MM-DD}.md`
-
-Results are also saved to `/tmp/triage_analysis.json`.
+This reads collected data (from `/tmp/triage_collect/` or Obsidian files), loads enrichment results (from `/tmp/triage_enrich/result_*.json`), runs template completeness scoring, text-similarity duplicate detection, and resolution status assessment against the full knowledge base. Prints a summary table to stdout and saves results to `/tmp/triage_analysis.json`.
 
 Resolution status is derived from board column + linked dev tickets (via "blocks", "is implemented by", "implements" relationships). Values: `unresolved`, `in_progress`, `roadmapped`, `resolved`, `rejected`, `blocked`.
 
@@ -267,100 +262,20 @@ python3 ~/.claude/skills/root-cause-triage/merge_results.py --check
 
 If any batches are missing, re-spawn the failed agents before merging.
 
-### Step A3 — Update Obsidian reports
+### Step A3 — Generate reports
 
-Read both reports that `analyze.py` wrote. Update each by replacing the HTML comment placeholders with content from Steps A2a–A2c.
-
-#### Raw Analysis (`Raw Analysis - {YYYY-MM-DD}.md`)
-
-**Replace `<!-- PLACEHOLDER:RAW_QUALITY -->` with Quality Assessment** (from Step A2a):
-
-```markdown
-| Key | Quality | Note | Dup Assessment | Recurrence | Recommended Action |
-|-----|---------|------|----------------|------------|--------------------|
-| [KEY](JIRA_BASE_URL/browse/KEY) | good/thin/vague | note or -- | confirmed/unlikely/n/a | likely/unlikely/n/a | ready/more_info/duplicate/skip |
-{... one row per issue, no blank lines between rows ...}
-
-### Issues Flagged as Thin or Vague
-{Per-issue breakdown for quality != "good"}
+```bash
+python3 ~/.claude/skills/root-cause-triage/report.py
 ```
 
-**Replace `<!-- PLACEHOLDER:RAW_TOP10 -->` with Top 10 Highest Value Ready Issues:**
+Reads `/tmp/triage_analysis_enriched.json` and `/tmp/triage_duplicates/clusters.json`, then writes both complete reports to `{TRIAGE_OUTPUT_PATH}/Analysis/`:
 
-Build this by evaluating all "ready" issues (from structural recommendation) using these ranking factors:
-1. **Linked ticket count** — more links = wider impact
-2. **Support ticket count** — direct user pain signal
-3. **Issue age** — how long the problem has been outstanding (use `created` date)
-4. **Related cluster membership** — addressing one issue may address several (use duplicate clusters from Step A2c if available)
-5. **Board column** — issues already in "Ready for Development" on the board are closer to action
+- `Raw Analysis - {YYYY-MM-DD}.md` — quality assessment, text-similarity duplicates, needs-more-info/ready groupings, Top 10 ranking
+- `Enriched Analysis - {YYYY-MM-DD}.md` — raw vs enriched comparison, post-enrichment quality with upgrade arrows, semantic duplicate clusters, related clusters, Top 10 ranking with classification
 
-```markdown
-| # | Key | Summary | Links | Support | Age | Reasoning |
-|---|-----|---------|-------|---------|-----|-----------|
-{Top 10 rows with brief reasoning for each}
-```
+Use `--dry-run` to preview output paths without writing files.
 
-#### Enriched Analysis (`Enriched Analysis - {YYYY-MM-DD}.md`)
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_SUMMARY -->` with post-enrichment recommendation counts:**
-
-Derive counts from the merged results in `/tmp/triage_analysis_enriched.json`:
-
-```markdown
-**By recommendation (post-enrichment):**
-- Good (ready for development): N
-- Thin (needs more information): N
-- Vague (needs more information): N
-- Potential duplicates (semantic): N
-```
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_COMPARISON -->` with Raw vs Enriched Comparison:**
-
-```markdown
-| Metric | Raw Assessment | Post-Enrichment |
-|--------|---------------|-----------------|
-| Good | N | N |
-| Thin | N | N |
-| Vague | N | N |
-
-Enrichment upgraded **N** issues from vague/thin to good.
-```
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_QUALITY -->` with Post-Enrichment Quality Assessment** (from Step A2b):
-
-```markdown
-| Key | Raw Quality | Post-Enrichment | Note | Action |
-|-----|-------------|-----------------|------|--------|
-{Mark upgrades with **↑**, one row per issue}
-```
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_DUPLICATES -->` with Confirmed Duplicates** (from Step A2c):
-
-```markdown
-| Primary | Duplicate(s) | Rationale |
-|---------|-------------|-----------|
-{One row per duplicate cluster}
-```
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_CLUSTERS -->` with Related Clusters** (from Step A2c):
-
-```markdown
-{Per-theme breakdown with tickets and overlap rationale}
-```
-
-**Replace `<!-- PLACEHOLDER:ENRICHED_TOP10 -->` with Top 10 Highest Value Ready Issues:**
-
-Same ranking factors as the Raw report, plus:
-6. **Quality upgrade** — issues that went from vague/thin to good with high-confidence autofill are stronger candidates
-7. **Classification** — code bugs with clear root cause analysis may be more immediately actionable than feature requests
-
-```markdown
-| # | Key | Summary | Classification | Links | Support | Age | Reasoning |
-|---|-----|---------|---------------|-------|---------|-----|-----------|
-{Top 10 rows with brief reasoning for each}
-```
-
-Use the Read tool to load each report, replace the placeholder comments with the content, and use the Write tool to save.
+If the script exits with a non-zero status, display the error and stop.
 
 ### Step A4 — Present results
 

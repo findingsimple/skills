@@ -33,7 +33,10 @@ Each skill lives in its own directory with a `SKILL.md` file:
     ENRICH_PROMPT.md    # Agent prompt template for linked issue summarization and root cause synthesis
     autofill.py         # Mode: collect — auto-fill missing template sections using agent synthesis
     AUTOFILL_PROMPT.md  # Agent prompt template for template section autofill
-    analyze.py          # Mode: analyze — structural scoring, duplicate detection, loads enrichment data, writes report
+    analyze.py          # Mode: analyze — structural scoring, duplicate detection, writes JSON to /tmp/
+    build_prompts.py    # Mode: analyze — builds agent prompt batches from analysis JSON
+    merge_results.py    # Mode: analyze — merges agent results + enrichment into enriched JSON
+    report.py           # Mode: analyze — reads enriched JSON + clusters, writes Raw + Enriched Analysis reports
     QUALITY_PROMPT.md   # Agent prompt for raw quality assessment (analyze Step A2a)
     POST_ENRICH_QUALITY_PROMPT.md  # Agent prompt for post-enrichment quality assessment (analyze Step A2b)
     DUPLICATE_PROMPT.md # Agent prompt for semantic duplicate detection (analyze Step A2c)

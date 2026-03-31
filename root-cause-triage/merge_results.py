@@ -26,6 +26,7 @@ ANALYSIS_PATH = "/tmp/triage_analysis.json"
 PROMPT_BASE = "/tmp/triage_prompts"
 ENRICHED_PATH = "/tmp/triage_analysis_enriched.json"
 DUPLICATES_DIR = "/tmp/triage_duplicates"
+ENRICH_DIR = "/tmp/triage_enrich"
 
 
 def extract_json(text):
@@ -106,6 +107,36 @@ def load_batch_results(prompt_type):
                 results[key] = item
 
     return results, stats
+
+
+def load_enrichments():
+    """Load enrichment results (classification, root cause) from /tmp/triage_enrich/."""
+    results = {}
+    if not os.path.isdir(ENRICH_DIR):
+        return results
+    for filename in os.listdir(ENRICH_DIR):
+        if filename.startswith("result_") and filename.endswith(".json"):
+            filepath = os.path.join(ENRICH_DIR, filename)
+            try:
+                with open(filepath) as f:
+                    data = json.load(f)
+                key = data.get("key")
+                if key:
+                    results[key] = data
+            except Exception:
+                pass
+    return results
+
+
+def merge_enrichments(issues_by_key, enrichments):
+    """Merge enrichment data (classification, root_cause_analysis) into issues."""
+    merged = 0
+    for key, enrich in enrichments.items():
+        if key in issues_by_key:
+            issues_by_key[key]["classification"] = enrich.get("classification")
+            issues_by_key[key]["root_cause_analysis"] = enrich.get("root_cause_analysis")
+            merged += 1
+    return merged
 
 
 def merge_raw_quality(issues_by_key, raw_results):
@@ -206,6 +237,15 @@ def main():
 
     issues_by_key = {iss["key"]: iss for iss in issues}
     print("Loaded %d issues from %s" % (len(issues), ANALYSIS_PATH))
+
+    # Merge enrichment data (classification, root_cause_analysis)
+    print("\nEnrichment data:")
+    enrichments = load_enrichments()
+    if enrichments:
+        merged = merge_enrichments(issues_by_key, enrichments)
+        print("  %d enrichment results loaded, %d issues merged" % (len(enrichments), merged))
+    else:
+        print("  No enrichment results found")
 
     # Merge A2a — raw quality
     print("\nA2a (raw-quality):")
