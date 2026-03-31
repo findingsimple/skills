@@ -3,7 +3,7 @@
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def parse_dt(dt_str):
@@ -26,6 +26,22 @@ def parse_dt(dt_str):
             return datetime.strptime(dt_str[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
         except Exception:
             return None
+
+
+def previous_business_day(dt):
+    """Return the date of the most recent business day before dt.
+
+    On Monday, returns Friday. On Tuesday-Friday, returns the previous day.
+    On weekends (shouldn't happen in practice), returns Friday.
+    """
+    d = dt.date() if hasattr(dt, 'date') else dt
+    if d.weekday() == 0:  # Monday
+        offset = 3
+    elif d.weekday() == 6:  # Sunday
+        offset = 2
+    else:
+        offset = 1
+    return d - timedelta(days=offset)
 
 
 def business_days_since(dt, now):
@@ -169,7 +185,7 @@ def analyze_support_tickets(support_tickets, now, sprint_start, support_board_co
     unacknowledged = []
     sla_risk = []
 
-    today_str = now.strftime("%Y-%m-%d")
+    new_since = previous_business_day(now)
 
     # SLA target resolution times by priority (business days).
     # Alert fires 1 business day before the deadline.
@@ -197,8 +213,8 @@ def analyze_support_tickets(support_tickets, now, sprint_start, support_board_co
 
         # New / Unacknowledged: only To do tickets
         if is_todo:
-            created_date = created_dt.strftime("%Y-%m-%d")
-            if created_date == today_str:
+            created_date = created_dt.date() if hasattr(created_dt, 'date') else created_dt
+            if created_date >= new_since:
                 new_tickets.append(ticket)
 
             hours_open = (now - created_dt).total_seconds() / 3600

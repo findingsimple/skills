@@ -33,11 +33,11 @@ Scope: all tickets in the support project with the team's label (any column). Al
 Three sub-alerts:
 
 #### 2a. New Tickets
-**Trigger:** Support ticket created today.
+**Trigger:** Support ticket created since the previous business day.
 **Detection:** Script-based (`analyze.py` → `analyze_support_tickets`)
 **Output template:**
 ```
-- **{key}** ({priority}) "{summary}" — created today.
+- **{key}** ({priority}) "{summary}" — created {created_date}.
 ```
 
 #### 2b. Unacknowledged

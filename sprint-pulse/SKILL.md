@@ -181,7 +181,7 @@ Generate the output in this format:
 
 ### Support Tickets ({new_count} new, {unack_count} unacknowledged, {sla_count} at SLA risk)
 {For each new ticket:}
-- **{key}** ({priority}) "{summary}" — created today.
+- **{key}** ({priority}) "{summary}" — created {created_date}.
 
 {For each unacknowledged ticket:}
 - **{key}** ({priority}) "{summary}" — open for {hours_open}h, unacknowledged.
