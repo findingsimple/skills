@@ -194,20 +194,24 @@ If name is missing, show usage help and stop.
 
 Same matching logic as the `capture` subcommand (case-insensitive, first name, partial, full name).
 
-#### Step 4 — Gather all inputs
+#### Step 4 — Gather inputs and synthesize (sub-agent)
 
-Collect the following files for the matched person. Read each one that exists:
+Read just the target review cycle document to check for a `## Captured Feedback` section with bullet points. If empty or missing, warn the manager and ask if they want to proceed with only Bonusly and prior review data.
 
-1. **Person profile** — `{person_dir}/{Full Name}.md`
-2. **Target review cycle document** — based on cycle type and year (same path resolution as `capture`)
-3. **Bonusly recognition files** — all `{person_dir}/Feedback/Bonusly - *.md` files for the current year
-4. **Prior review packets** — all files in `{person_dir}/Feedback/*/Review Packet - *.md`
+After confirmation, spawn a `performance-reviewer` agent with:
+- The person's full name, team, cycle type, and year
+- Instruction to read these files (using the Read tool) and include their content in the synthesis:
+  1. **Person profile** — `{person_dir}/{Full Name}.md`
+  2. **Review cycle document** — `{person_dir}/Feedback/{Mid Year|EOY} Review Cycle - {year}.md`
+  3. **Bonusly recognition** — all `{person_dir}/Feedback/Bonusly - *.md` for the current year (use Glob to discover)
+  4. **Prior review packets** — all `{person_dir}/Feedback/*/Review Packet - *.md` (use Glob to discover)
+- The synthesis prompt from **Step 5** below
 
-If the target review cycle document has no `## Captured Feedback` section or it's empty (no bullet points), warn the manager that there's no captured feedback to synthesize and ask if they want to proceed with only Bonusly and prior review data.
+The agent reads all files, performs synthesis, and returns draft responses. The main agent resumes from **Step 6** with the returned output.
 
-#### Step 5 — Spawn the Performance Reviewer agent
+#### Step 5 — Synthesis prompt template
 
-Use the Agent tool to spawn the `performance-reviewer` agent with the following prompt. Include the full content of every file gathered in Step 4 in the prompt — the agent runs in a forked context and has no access to the conversation history.
+The `performance-reviewer` agent uses this prompt structure. Include the full content of every file it reads — the agent runs in a forked context and has no access to the conversation history.
 
 ```
 You are synthesizing a {cycle_type} performance review for {Full Name} ({team} team).

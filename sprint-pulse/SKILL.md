@@ -130,9 +130,19 @@ python3 ~/.claude/skills/sprint-pulse/analyze.py
 
 This reads `/tmp/sprint_pulse_data.json` and writes `/tmp/sprint_pulse_alerts.json`.
 
-### Step 6 — Detect outstanding questions (agent analysis)
+### Step 6 — Detect outstanding questions (sub-agent)
 
-Read `/tmp/sprint_pulse_data.json`. Analyse two sets of items for outstanding unanswered questions:
+Spawn a **general-purpose agent** with:
+- The path `/tmp/sprint_pulse_data.json`
+- The full text of the **analysis instructions** below
+
+The agent must read `/tmp/sprint_pulse_data.json` via Bash `cat` (not the Read tool), analyse the data, and return a structured list of outstanding questions. Each question should include: issue key, summary, source (Jira comment or MR note with link), question text (first 150 chars), time ago, and who asked it. If no questions are found, return "No outstanding questions detected."
+
+The main agent resumes from **Step 7** with the returned questions.
+
+**Analysis instructions for the agent:**
+
+Analyse two sets of items for outstanding unanswered questions:
 
 1. **Active sprint issues** — where `is_active` is true and the issue has comments or MR notes
 2. **Open support tickets** — entries in `support_tickets` that have a `comments` array (non-closed tickets with fetched comments)

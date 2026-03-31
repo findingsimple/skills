@@ -24,6 +24,8 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md
   retro-summary/
     SKILL.md
+    PROMPTS.md          # Synthesis agent prompts per retro template (rose-thorn-bud, wind-sun-anchor-reef)
+    TEMPLATES.md        # Output file templates per retro format (frontmatter + sections)
   root-cause-triage/
     SKILL.md
     jira_client.py      # Jira API client (load_env, auth, get/post, cursor-based paginated search)
@@ -88,6 +90,7 @@ Full best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-
 - **Sandbox-safe commands** — consolidate API calls and data processing into permanent Python scripts in the skill directory. Each skill with API calls has its own `*_client.py` (API utilities) and processing scripts. Use `urllib.request` inside Python instead of curl to avoid sandbox approval prompts. Never use the Write/Edit tool for `/tmp/` files (triggers "outside working directory" prompts). Never use inline `python3 -c` with complex quoting (triggers "obfuscation" warnings). Spawned agents (via the Agent tool) cannot use the Read tool on `/tmp/` paths — instruct them to use `cat` via the Bash tool instead.
 - **Avoid MCP for large payloads** — MCP tool responses load fully into conversation context. For endpoints that return large payloads (e.g., Jira issue changelogs), process in Python scripts instead. This prevents context exhaustion and forced compaction.
 - **Keep context lean** — skills that make many API calls should process data in Python scripts that save results to `/tmp/*.json` files. Only print summaries to stdout. The markdown generation step reads from these files rather than keeping raw API data in context.
+- **Delegate to sub-agents for token reduction** — when a step gathers raw data (API responses, file contents, search results) only to pass it to an analysis or synthesis step, delegate both the gathering and analysis to a sub-agent via the Agent tool. The sub-agent runs in its own context window and returns only a distilled summary. Rule of thumb: if a step reads 5+ files or processes 50+ items just to produce a summary, delegate it. Save intermediate data to `/tmp/*.json` so the sub-agent can read it via Bash `cat` (not the Read tool).
 - **Gitignore runtime artifacts** — if a skill writes persistent files into its own directory (e.g., `triage_history.json`), add them to `.gitignore`. Only `/tmp/` files are ephemeral by default; anything in the skill directory will be tracked by git otherwise.
 - **Scheduled execution** — the `schedules/` directory contains macOS LaunchAgent templates and an `install.sh` script for running skills on a cron-like schedule. Templates use `{{HOME}}` placeholders resolved at install time. Generated `.plist` files are gitignored; only `.plist.template` files are committed.
 - **Keep README in sync with SKILL.md** — when a SKILL.md's capabilities, supported formats, or prerequisites change, update the corresponding entry in `README.md` too. The README is the public-facing summary; stale entries mislead users.

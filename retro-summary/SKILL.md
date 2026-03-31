@@ -88,9 +88,28 @@ Verify the resolved team directory exists at `{OBSIDIAN_TEAMS_PATH}/{team_name}/
 - List all available retro sections with their dates.
 - Check the vault for existing retro files (`Retro - {YYYY-MM-DD}.md`) and mark already-processed sections with a checkmark in the listing.
 - Use `AskUserQuestion` to let the user pick which retro to summarize. Present the section dates as options (up to 4 most recent; include "Other" for older ones).
-- After selection, re-fetch the specific section by calling `mcp__figma__get_figjam` with the selected section's node ID for cleaner data.
+- Record the selected section's `nodeId` — the sub-agent in Step 4 will fetch and parse the section data.
 
-### Step 4 — Detect template and extract stickies from target section
+### Step 4 — Extract and categorize stickies (sub-agent)
+
+Spawn a **general-purpose agent** with:
+- The `fileKey` and selected section's `nodeId`
+- The full text of **Steps 4a–4d** below as working instructions
+- Instruction to first call `mcp__figma__get_figjam` with the `fileKey` and `nodeId` to fetch the section data
+- Instruction to save parsed data to `/tmp/retro_parsed.json` (via Bash, not the Write tool) as JSON:
+  ```json
+  {
+    "template": "rose-thorn-bud",
+    "section_name": "5 Nov 2025",
+    "categories": {
+      "Rose": [{"author": "Alex Chen", "text": "Great teamwork", "votes": 2}]
+    },
+    "participants": ["Alex Chen", "Jordan Park"]
+  }
+  ```
+- Instruction to return a formatted summary: each category with sticky count and list (`- **{Author}**: {text} (N votes)`), plus a participants line
+
+The main agent resumes from **Step 5** once the sub-agent completes.
 
 #### 4a — Detect retro template
 
@@ -142,71 +161,39 @@ Look for `<stamp>` and `<instance>` elements near each sticky (within ~200px pro
 
 ### Step 5 — Present extracted data
 
-Show the user a structured summary of what was extracted. Use category names that match the detected template.
-
-**Rose/Thorn/Bud:**
-```
-Retro: {section_name}
-
-Rose ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Thorn ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Bud ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Participants: {comma-separated list of unique authors}
-```
-
-**Wind/Sun/Anchor/Reef:**
-```
-Retro: {section_name}
-
-Wind — Helped us forward ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Sun — Made us feel good ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Anchor — Held us back ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Reef — Future risks ({count} stickies):
-  - {Author}: {text} {vote_indicator}
-
-Participants: {comma-separated list of unique authors}
-```
-
-Where `{vote_indicator}` is shown only for stickies with votes, formatted as `(N votes)`.
+Display the summary returned by the Step 4 sub-agent to the user.
 
 Ask the user: "Does the categorization look correct? If counts need adjusting, tell me. Otherwise I'll proceed with synthesis and write to vault."
 
-If the user provides corrected counts or moves specific stickies, adjust accordingly and re-display the corrected summary before proceeding.
+If the user provides corrections, update `/tmp/retro_parsed.json` accordingly (via Bash, not the Write tool) and re-display the corrected summary before proceeding.
 
-### Step 6 — AI synthesis
+### Step 6 — AI synthesis and output assembly (sub-agent)
 
-Read [PROMPTS.md](PROMPTS.md) for the full agent prompt matching the detected template. Use the Agent tool to spawn a `general-purpose` agent with that prompt, including all categorized stickies.
+Spawn a **general-purpose agent** with:
+- The path `/tmp/retro_parsed.json`
+- The FigJam source URL, team name, and section date
+- Instruction to:
+  1. Read `/tmp/retro_parsed.json` via Bash `cat` (not the Read tool)
+  2. Read `~/.claude/skills/retro-summary/PROMPTS.md` for the synthesis prompt matching the template type
+  3. Construct the synthesis prompt with the categorized stickies and perform the synthesis
+  4. Read `~/.claude/skills/retro-summary/TEMPLATES.md` for the output template and formatting rules
+  5. Assemble the complete output file (frontmatter + synthesis sections + raw feedback sections)
+  6. Return the complete markdown content ready to write
 
-After synthesis completes, proceed directly to writing the file (the user already confirmed in Step 5). In `--dry-run` mode, print the output instead of writing.
+The main agent resumes from **Step 7** with the returned content.
 
 ### Step 7 — Write to vault
 
-**Parse the section date** from the section name (e.g., "5 Nov 2025") into `YYYY-MM-DD` format for the frontmatter and file name.
-
-**Build the output file** using the template below.
-
-**Collect participants** — deduplicate all sticky authors into a sorted list.
-
 **Output path:** `{OBSIDIAN_TEAMS_PATH}/{team_name}/Retros/Retro - {YYYY-MM-DD}.md`
+
+Parse the section date from the section name (e.g., "5 Nov 2025") into `YYYY-MM-DD` format for the file name.
 
 Create the `Retros/` directory if it doesn't exist:
 ```bash
 mkdir -p "{OBSIDIAN_TEAMS_PATH}/{team_name}/Retros"
 ```
 
-**Normal mode:** Use the Write tool to create the file. Confirm to the user:
+**Normal mode:** Use the Write tool to create the file with the content returned from Step 6. Confirm to the user:
 ```
 Retro summary written to: {file_path}
 ```
@@ -215,7 +202,3 @@ Retro summary written to: {file_path}
 ```
 **DRY RUN** — would write to: {file_path}
 ```
-
-### Output Templates
-
-Read [TEMPLATES.md](TEMPLATES.md) for the full output template matching the detected format, including frontmatter structure and formatting rules.
