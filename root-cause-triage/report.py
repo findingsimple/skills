@@ -320,7 +320,7 @@ def build_raw_report(issues, clusters, base_url):
         lines.append("| # | Key | Summary | Links | Support | Reasoning |")
         lines.append("|---|-----|---------|-------|---------|-----------|")
         for rank, (score, iss, reasoning) in enumerate(top10, 1):
-            summary_short = truncate(iss["summary"], 55)
+            summary_short = iss.get("summary", "")
             lines.append("| %d | %s | %s | %d | %d | %s |" % (
                 rank, jira_link(iss["key"], base_url), summary_short,
                 iss.get("linked_issue_count", 0), iss.get("linked_support_count", 0),
@@ -537,7 +537,7 @@ def build_enriched_report(issues, clusters, base_url):
         lines.append("| # | Key | Summary | Classification | Links | Support | Reasoning |")
         lines.append("|---|-----|---------|---------------|-------|---------|-----------|")
         for rank, (score, iss, reasoning) in enumerate(top10, 1):
-            summary_short = truncate(iss["summary"], 50)
+            summary_short = iss.get("summary", "")
             cls = (iss.get("classification") or "").replace("_", " ")
             lines.append("| %d | %s | %s | %s | %d | %d | %s |" % (
                 rank, jira_link(iss["key"], base_url), summary_short,
