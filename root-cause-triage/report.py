@@ -342,7 +342,7 @@ def _build_issue_table(group, base_url):
     lines.append("| Key | Summary | Score | Created | Links |")
     lines.append("|-----|---------|-------|---------|-------|")
     for iss in group:
-        summary_short = truncate(iss.get("summary", ""), 60)
+        summary_short = truncate(iss.get("summary", ""), 120)
         created = iss.get("created", "")[:10]
         lines.append("| %s | %s | %d/%d | %s | %d |" % (
             jira_link(iss["key"], base_url), summary_short,
