@@ -19,7 +19,6 @@ Outputs:
 import argparse
 import json
 import os
-import re
 import sys
 from datetime import datetime, timezone
 
@@ -42,19 +41,6 @@ def jira_link(key, base_url):
         return "[%s](%s/browse/%s)" % (key, base_url, key)
     return key
 
-
-def sanitize_filename(s, max_len=80):
-    """Sanitize a string for use in filenames (matches summarize.py)."""
-    s = re.sub(r'[/\\:*?"<>|]', '-', s)
-    if len(s) > max_len:
-        s = s[:max_len].rstrip()
-    return s
-
-
-def wiki_link(key, summary):
-    """Return an Obsidian wiki-link: [[KEY --- summary|KEY]]."""
-    safe_summary = sanitize_filename(summary)
-    return "[[%s — %s|%s]]" % (key, safe_summary, key)
 
 
 def truncate(text, max_len=80):
@@ -122,17 +108,6 @@ def quality_counts(issues, field="quality"):
     return counts
 
 
-def issue_age_days(iss):
-    """Return age in days from created date to now."""
-    created = iss.get("created", "")
-    if not created:
-        return 0
-    try:
-        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-        return (datetime.now(timezone.utc) - created_dt).days
-    except (ValueError, TypeError):
-        return 0
-
 
 def rank_top10(issues, clusters, use_enrichment=False):
     """Rank ready issues by value signals. Returns top 10 with reasoning."""
@@ -158,7 +133,6 @@ def rank_top10(issues, clusters, use_enrichment=False):
         key = iss["key"]
         links = iss.get("linked_issue_count", 0)
         support = iss.get("linked_support_count", 0)
-        age = issue_age_days(iss)
         in_cluster = 1 if key in cluster_keys else 0
 
         reasons = []
@@ -173,12 +147,6 @@ def rank_top10(issues, clusters, use_enrichment=False):
         score += support * 5
         if support > 0:
             reasons.append("%d support tickets" % support)
-
-        # Age — long-standing problems
-        age_score = min(age / 30, 12)  # cap at 12 months
-        score += age_score
-        if age > 90:
-            reasons.append("%d days old" % age)
 
         # Cluster membership — addressing one helps many
         score += in_cluster * 3
@@ -237,6 +205,8 @@ def build_raw_report(issues, clusters, base_url):
         "",
         "# Raw Analysis — %s" % date_str,
         "",
+        "Assessment of root cause issues based solely on their raw Jira descriptions. This report identifies which issues have enough detail to act on, which need more information, and where duplicates or overlaps exist. Use this as a baseline -- the Enriched Analysis builds on these findings with linked issue evidence and agent-generated context.",
+        "",
         "## Summary",
         "",
         "- **%d** issues analyzed" % len(issues),
@@ -268,6 +238,8 @@ def build_raw_report(issues, clusters, base_url):
     # Quality Assessment table
     lines.append("## Quality Assessment")
     lines.append("")
+    lines.append("Agent assessment of each issue based on the raw Jira description only (no enrichment). **Quality:** good = enough detail to scope a fix, thin = partial detail with gaps, vague = placeholder template or empty. **Action:** ready = can proceed to development, more_info = needs additional context before scoping.")
+    lines.append("")
     lines.append("| Key | Quality | Note | Dup Assessment | Recurrence | Action |")
     lines.append("|-----|---------|------|----------------|------------|--------|")
     for iss in issues:
@@ -287,6 +259,8 @@ def build_raw_report(issues, clusters, base_url):
     if flagged:
         lines.append("### Issues Flagged as Thin or Vague")
         lines.append("")
+        lines.append("Detailed breakdown of issues that lack sufficient information. These are candidates for follow-up with the reporter or linked support tickets to fill in the gaps.")
+        lines.append("")
         for iss in flagged:
             note = iss.get("quality_note") or "No detail provided"
             lines.append("- **%s** (%s): %s" % (
@@ -295,6 +269,8 @@ def build_raw_report(issues, clusters, base_url):
 
     # Duplicate & Overlap — text-similarity from structural analysis
     lines.append("## Duplicate & Overlap Analysis")
+    lines.append("")
+    lines.append("Structural duplicate detection based on text similarity between issue titles and descriptions. High match percentages suggest the same problem reported separately. See the Enriched Analysis for deeper semantic duplicate detection using root cause analysis.")
     lines.append("")
     dup_issues = [i for i in issues if i.get("duplicate_of")]
     lines.append("### Text-Similarity Duplicates")
@@ -322,28 +298,33 @@ def build_raw_report(issues, clusters, base_url):
     more_info_group = [i for i in issues if i.get("recommended_action") == "more_info"]
     lines.append("## Needs More Information (%d)" % len(more_info_group))
     lines.append("")
+    lines.append("Issues where the raw Jira description lacks enough detail to scope a fix. **Score** shows how many of the 5 template sections (Background Context, Steps to Reproduce, Actual Results, Expected Results, Analysis) are filled in.")
+    lines.append("")
     lines.extend(_build_issue_table(more_info_group, base_url))
 
     # Ready for Development
     ready_group = [i for i in issues if i.get("recommended_action") == "ready"]
     lines.append("## Ready for Development (%d)" % len(ready_group))
     lines.append("")
+    lines.append("Issues with sufficient detail in the raw Jira description for a PM to understand the problem and scope a solution.")
+    lines.append("")
     lines.extend(_build_issue_table(ready_group, base_url))
 
     # Top 10
     lines.append("## Top 10 Highest Value Ready Issues")
     lines.append("")
+    lines.append("Ready issues ranked by impact signals: linked issue count (wider impact), support ticket count (direct user pain), cluster membership (fixing one addresses many), and board status. Higher-ranked issues represent the best candidates to prioritise.")
+    lines.append("")
     top10 = rank_top10(issues, clusters, use_enrichment=False)
     if top10:
-        lines.append("| # | Key | Summary | Links | Support | Age | Reasoning |")
-        lines.append("|---|-----|---------|-------|---------|-----|-----------|")
+        lines.append("| # | Key | Summary | Links | Support | Reasoning |")
+        lines.append("|---|-----|---------|-------|---------|-----------|")
         for rank, (score, iss, reasoning) in enumerate(top10, 1):
             summary_short = truncate(iss["summary"], 55)
-            age = issue_age_days(iss)
-            lines.append("| %d | %s | %s | %d | %d | %dd | %s |" % (
+            lines.append("| %d | %s | %s | %d | %d | %s |" % (
                 rank, jira_link(iss["key"], base_url), summary_short,
                 iss.get("linked_issue_count", 0), iss.get("linked_support_count", 0),
-                age, truncate(reasoning, 80),
+                truncate(reasoning, 80),
             ))
         lines.append("")
     else:
@@ -354,20 +335,19 @@ def build_raw_report(issues, clusters, base_url):
 
 
 def _build_issue_table(group, base_url):
-    """Build a summary table for a group of issues with wiki-links."""
+    """Build a summary table for a group of issues."""
     if not group:
         return ["No issues in this group.", ""]
     lines = []
-    lines.append("| Key | Summary | Score | Created | Links | Detail |")
-    lines.append("|-----|---------|-------|---------|-------|--------|")
+    lines.append("| Key | Summary | Score | Created | Links |")
+    lines.append("|-----|---------|-------|---------|-------|")
     for iss in group:
         summary_short = truncate(iss.get("summary", ""), 60)
         created = iss.get("created", "")[:10]
-        lines.append("| %s | %s | %d/%d | %s | %d | %s |" % (
+        lines.append("| %s | %s | %d/%d | %s | %d |" % (
             jira_link(iss["key"], base_url), summary_short,
             iss.get("filled_count", 0), iss.get("total_sections", 5),
             created, iss.get("linked_issue_count", 0),
-            wiki_link(iss["key"], iss.get("summary", "")),
         ))
     lines.append("")
     return lines
@@ -401,6 +381,8 @@ def build_enriched_report(issues, clusters, base_url):
         "---",
         "",
         "# Enriched Analysis — %s" % date_str,
+        "",
+        "The full picture -- combines raw Jira descriptions with linked issue evidence, agent-generated root cause analysis, autofill sections, and semantic duplicate detection. Issues that were vague or thin in the Raw Analysis may be upgraded here if linked tickets provided enough context. This is the primary report for prioritisation and triage decisions.",
         "",
         "## Summary",
         "",
@@ -440,6 +422,8 @@ def build_enriched_report(issues, clusters, base_url):
     # Raw vs Enriched Comparison
     lines.append("### Raw vs Enriched Comparison")
     lines.append("")
+    lines.append("How quality assessments shifted after incorporating linked issue evidence, autofill sections, and root cause analysis. Issues moving from vague/thin to good gained enough combined context to be actionable.")
+    lines.append("")
     lines.append("| Metric | Raw Assessment | Post-Enrichment |")
     lines.append("|--------|---------------|-----------------|")
     for k in ("good", "thin", "vague"):
@@ -450,6 +434,8 @@ def build_enriched_report(issues, clusters, base_url):
 
     # Post-Enrichment Quality Assessment table
     lines.append("## Quality Assessment")
+    lines.append("")
+    lines.append("Side-by-side comparison of each issue's quality before and after enrichment. An **arrow** indicates the issue was upgraded from vague/thin to good by the additional evidence. Issues still marked thin or vague after enrichment are the highest priority for human review.")
     lines.append("")
     lines.append("| Key | Raw Quality | Post-Enrichment | Note | Action |")
     lines.append("|-----|-------------|-----------------|------|--------|")
@@ -471,10 +457,14 @@ def build_enriched_report(issues, clusters, base_url):
     # Duplicate & Overlap Analysis
     lines.append("## Duplicate & Overlap Analysis")
     lines.append("")
+    lines.append("Semantic duplicate and overlap detection based on root cause analysis, not just text similarity. Confirmed duplicates describe the same underlying deficiency and should be consolidated. Related clusters share a theme but need separate implementations.")
+    lines.append("")
 
     # Confirmed Duplicates (from A2c semantic analysis)
     dup_clusters = [c for c in clusters if c.get("type") == "duplicate"]
     lines.append("### Confirmed Duplicates")
+    lines.append("")
+    lines.append("Issues identified as describing the same root cause. The primary issue should be kept; duplicates can be linked and closed.")
     lines.append("")
     if dup_clusters:
         lines.append("| Primary | Duplicate(s) | Rationale |")
@@ -493,6 +483,8 @@ def build_enriched_report(issues, clusters, base_url):
     rel_clusters = [c for c in clusters if c.get("type") == "related"]
     lines.append("### Related Clusters")
     lines.append("")
+    lines.append("Groups of issues that share a common theme or affected area but require separate solutions. Useful for batching related work or identifying areas with concentrated pain.")
+    lines.append("")
     if rel_clusters:
         for c in rel_clusters:
             theme = c.get("theme", "Untitled")
@@ -510,29 +502,34 @@ def build_enriched_report(issues, clusters, base_url):
     more_info_group = [i for i in issues if i.get("post_enrich_action") == "more_info"]
     lines.append("## Needs More Information (%d)" % len(more_info_group))
     lines.append("")
+    lines.append("Issues that remain insufficiently detailed even after enrichment with linked issue evidence and autofill. These need human investigation -- the combined evidence from raw description, linked tickets, and agent synthesis was not enough to fully scope the problem.")
+    lines.append("")
     lines.extend(_build_issue_table(more_info_group, base_url))
 
     # Ready for Development (post-enrichment)
     ready_group = [i for i in issues if i.get("post_enrich_action") == "ready"]
     lines.append("## Ready for Development (%d)" % len(ready_group))
     lines.append("")
+    lines.append("Issues with enough combined evidence (raw description + enrichment + autofill) to understand the problem and scope a solution. Many of these had vague raw descriptions but were upgraded by linked issue evidence.")
+    lines.append("")
     lines.extend(_build_issue_table(ready_group, base_url))
 
     # Top 10 (enriched ranking)
     lines.append("## Top 10 Highest Value Ready Issues")
     lines.append("")
+    lines.append("Ready issues ranked by impact signals: support ticket count (direct user pain), linked issue count (wider impact), cluster membership (fixing one addresses many), quality upgrade from enrichment, and classification. Higher-ranked issues represent the best candidates to prioritise.")
+    lines.append("")
     top10 = rank_top10(issues, clusters, use_enrichment=True)
     if top10:
-        lines.append("| # | Key | Summary | Classification | Links | Support | Age | Reasoning |")
-        lines.append("|---|-----|---------|---------------|-------|---------|-----|-----------|")
+        lines.append("| # | Key | Summary | Classification | Links | Support | Reasoning |")
+        lines.append("|---|-----|---------|---------------|-------|---------|-----------|")
         for rank, (score, iss, reasoning) in enumerate(top10, 1):
             summary_short = truncate(iss["summary"], 50)
             cls = (iss.get("classification") or "").replace("_", " ")
-            age = issue_age_days(iss)
-            lines.append("| %d | %s | %s | %s | %d | %d | %dd | %s |" % (
+            lines.append("| %d | %s | %s | %s | %d | %d | %s |" % (
                 rank, jira_link(iss["key"], base_url), summary_short,
                 cls, iss.get("linked_issue_count", 0),
-                iss.get("linked_support_count", 0), age,
+                iss.get("linked_support_count", 0),
                 truncate(reasoning, 80),
             ))
         lines.append("")
