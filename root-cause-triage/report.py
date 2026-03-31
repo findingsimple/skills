@@ -334,21 +334,34 @@ def build_raw_report(issues, clusters, base_url):
     return "\n".join(lines)
 
 
-def _build_issue_table(group, base_url):
+def _build_issue_table(group, base_url, enriched=False):
     """Build a summary table for a group of issues."""
     if not group:
         return ["No issues in this group.", ""]
     lines = []
-    lines.append("| Key | Summary | Score | Created | Links |")
-    lines.append("|-----|---------|-------|---------|-------|")
-    for iss in group:
-        summary_short = truncate(iss.get("summary", ""), 120)
-        created = iss.get("created", "")[:10]
-        lines.append("| %s | %s | %d/%d | %s | %d |" % (
-            jira_link(iss["key"], base_url), summary_short,
-            iss.get("filled_count", 0), iss.get("total_sections", 5),
-            created, iss.get("linked_issue_count", 0),
-        ))
+    if enriched:
+        lines.append("| Key | Summary | Quality | Classification | Created | Links |")
+        lines.append("|-----|---------|---------|---------------|---------|-------|")
+        for iss in group:
+            summary_short = truncate(iss.get("summary", ""), 120)
+            quality = iss.get("post_enrich_quality", "--") or "--"
+            cls = (iss.get("classification") or "--").replace("_", " ")
+            created = iss.get("created", "")[:10]
+            lines.append("| %s | %s | %s | %s | %s | %d |" % (
+                jira_link(iss["key"], base_url), summary_short,
+                quality, cls, created, iss.get("linked_issue_count", 0),
+            ))
+    else:
+        lines.append("| Key | Summary | Score | Created | Links |")
+        lines.append("|-----|---------|-------|---------|-------|")
+        for iss in group:
+            summary_short = truncate(iss.get("summary", ""), 120)
+            created = iss.get("created", "")[:10]
+            lines.append("| %s | %s | %d/%d | %s | %d |" % (
+                jira_link(iss["key"], base_url), summary_short,
+                iss.get("filled_count", 0), iss.get("total_sections", 5),
+                created, iss.get("linked_issue_count", 0),
+            ))
     lines.append("")
     return lines
 
@@ -504,7 +517,7 @@ def build_enriched_report(issues, clusters, base_url):
     lines.append("")
     lines.append("Issues that remain insufficiently detailed even after enrichment with linked issue evidence and autofill. These need human investigation -- the combined evidence from raw description, linked tickets, and agent synthesis was not enough to fully scope the problem.")
     lines.append("")
-    lines.extend(_build_issue_table(more_info_group, base_url))
+    lines.extend(_build_issue_table(more_info_group, base_url, enriched=True))
 
     # Ready for Development (post-enrichment)
     ready_group = [i for i in issues if i.get("post_enrich_action") == "ready"]
@@ -512,7 +525,7 @@ def build_enriched_report(issues, clusters, base_url):
     lines.append("")
     lines.append("Issues with enough combined evidence (raw description + enrichment + autofill) to understand the problem and scope a solution. Many of these had vague raw descriptions but were upgraded by linked issue evidence.")
     lines.append("")
-    lines.extend(_build_issue_table(ready_group, base_url))
+    lines.extend(_build_issue_table(ready_group, base_url, enriched=True))
 
     # Top 10 (enriched ranking)
     lines.append("## Top 10 Highest Value Ready Issues")
