@@ -224,7 +224,7 @@ Print the full output to stdout so the user can copy-paste it.
 If `--dry-run` was **not** specified:
 
 Write the output as a markdown file with YAML frontmatter to:
-`{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Pulse - {YYYY-MM-DD}.md`
+`{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - Pulse - {YYYY-MM-DD}.md`
 
 Frontmatter:
 ```yaml
