@@ -41,7 +41,7 @@ Three sub-alerts:
 ```
 
 #### 2b. Unacknowledged
-**Trigger:** Support ticket in "To do" column for more than 24 hours.
+**Trigger:** Support ticket in "To do" column for more than 48 hours with no acknowledgement signals. Acknowledgement signals: any comment exists, or an assignee has been set (not "Unassigned"). The 48-hour threshold covers weekend creation (Friday ticket alerts on Monday).
 **Detection:** Script-based
 **Output template:**
 ```

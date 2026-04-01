@@ -2,8 +2,10 @@
 """Sprint pulse data fetcher: gathers sprint issues, changelogs, comments, MRs, and support tickets."""
 
 import json
+import re
 import sys
 import argparse
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from jira_client import load_env, init_auth, jira_get, jira_search_all, jira_get_changelog, jira_get_comments
@@ -264,21 +266,41 @@ def main():
                 })
             print("Found %d support tickets for team" % len(support_data), file=sys.stderr)
 
-            # Fetch comments for non-closed support tickets (for outstanding question detection)
-            closed_status_ids = set()
+            # Fetch comments only for tickets worth checking for outstanding questions.
+            # Exclude: closed, awaiting customer, and tickets older than 30 days.
+            skip_status_ids = set()
             if args.support_board_config_json:
                 try:
                     with open(args.support_board_config_json, "r") as f:
                         sbc = json.load(f)
                     for col in sbc:
-                        if col.get("name", "").lower().strip() in ("closed", "done", "resolved", "completed"):
-                            closed_status_ids.update(col.get("statuses", []))
+                        name = col.get("name", "").lower().strip()
+                        if name in ("closed", "done", "resolved", "completed") or "awaiting" in name or "waiting" in name:
+                            skip_status_ids.update(col.get("statuses", []))
                 except (FileNotFoundError, json.JSONDecodeError):
                     pass
 
-            open_tickets = [t for t in support_data if t["status_id"] not in closed_status_ids]
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            open_tickets = []
+            for t in support_data:
+                if t["status_id"] in skip_status_ids:
+                    continue
+                created_str = t.get("created", "")
+                if created_str:
+                    clean = re.sub(r"\.\d+", "", str(created_str)).replace("Z", "+00:00")
+                    m = re.match(r"(.*[+-])(\d{2})(\d{2})$", clean)
+                    if m:
+                        clean = "%s%s:%s" % (m.group(1), m.group(2), m.group(3))
+                    try:
+                        created_dt = datetime.fromisoformat(clean)
+                        if created_dt < cutoff:
+                            continue
+                    except Exception:
+                        pass
+                open_tickets.append(t)
             if open_tickets:
-                print("Fetching comments for %d open support tickets..." % len(open_tickets), file=sys.stderr)
+                print("Fetching comments for %d recent active support tickets (of %d total)..." % (
+                    len(open_tickets), len(support_data)), file=sys.stderr)
 
                 def fetch_support_comments(key):
                     return key, jira_get_comments(base_url, auth, key)

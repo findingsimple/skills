@@ -217,8 +217,12 @@ def analyze_support_tickets(support_tickets, now, sprint_start, support_board_co
             if created_date >= new_since:
                 new_tickets.append(ticket)
 
+            # Unacknowledged: open > 48h with no acknowledgement signals.
+            # Signals: any comment exists, or an assignee has been set.
             hours_open = (now - created_dt).total_seconds() / 3600
-            if hours_open > 24:
+            has_comments = bool(ticket.get("comments"))
+            has_assignee = ticket.get("assignee", "Unassigned") != "Unassigned"
+            if hours_open > 48 and not has_comments and not has_assignee:
                 unacknowledged.append({
                     **ticket,
                     "hours_open": round(hours_open, 1),
