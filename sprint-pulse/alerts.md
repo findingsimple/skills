@@ -85,7 +85,7 @@ If 2 or more highest priority tickets are active:
 
 **Trigger:** An unanswered question detected in Jira comments or GitLab MR discussions for an active sprint item.
 
-**Detection:** Agent-based (Claude analyses comment threads in `/tmp/sprint_pulse_data.json`)
+**Detection:** Agent-based (Claude analyses comment threads in `/tmp/sprint_pulse_comments.json`)
 
 **Signals that indicate an outstanding question:**
 - A comment ending with `?` that has no reply for >4 hours
