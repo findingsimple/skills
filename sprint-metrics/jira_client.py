@@ -91,15 +91,17 @@ def gitlab_get(gitlab_url, path, token):
         raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
 
 
-def gitlab_get_all(gitlab_url, path, token):
+def gitlab_get_all(gitlab_url, path, token, max_pages=50):
     """GET all pages from a GitLab API endpoint. Returns concatenated list."""
     results = []
     url = gitlab_url + "/api/v4" + path
-    while url:
+    page_count = 0
+    while url and page_count < max_pages:
         req = urllib.request.Request(
             url,
             headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
         )
+        page_count += 1
         try:
             with _urlopen_with_retry(req) as resp:
                 data = json.loads(resp.read())

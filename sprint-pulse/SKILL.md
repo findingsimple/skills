@@ -1,10 +1,10 @@
 ---
 name: sprint-pulse
 description: >-
-  Generates mid-sprint alerts for a team's active sprint — flags stale items,
-  support ticket risks, and outstanding questions from Jira and GitLab data.
-  Use when the user asks for sprint pulse, sprint alerts, daily standup check,
-  or mid-sprint health.
+  Generates mid-sprint alerts and DORA snapshot for a team's active sprint —
+  flags stale items, support ticket risks, outstanding questions, and deployment
+  metrics from Jira and GitLab data. Use when the user asks for sprint pulse,
+  sprint alerts, daily standup check, or mid-sprint health.
 disable-model-invocation: true
 argument-hint: "[--team <name>] [--dry-run]"
 allowed-tools: Bash Read Glob AskUserQuestion
@@ -45,9 +45,9 @@ Uses existing vars from other sprint skills plus two new ones:
 | File | Purpose |
 |------|---------|
 | `jira_client.py` | Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_search_all`, `jira_get_changelog`, `jira_get_comments` |
-| `gitlab_client.py` | GitLab API client — `load_gitlab_env`, `gitlab_get`, `search_mrs_for_issue`, `get_mr_notes` |
+| `gitlab_client.py` | GitLab API client — `load_gitlab_env`, `gitlab_get`, `gitlab_get_all`, `search_mrs_for_issue`, `get_mr_notes` |
 | `setup.py` | Validates env, discovers active sprint, parses team config |
-| `fetch.py` | Fetches sprint issues + changelogs + comments + MRs + MR notes + support tickets → `/tmp/` |
+| `fetch.py` | Fetches sprint issues + changelogs + comments + MRs + MR notes + support tickets + DORA snapshot → `/tmp/` |
 | `analyze.py` | Runs deterministic alerts (stale items, support tickets) → `/tmp/` |
 | `alerts.md` | Alert definitions, thresholds, output templates |
 
@@ -169,7 +169,7 @@ For each detected question, note:
 
 ### Step 7 — Generate output
 
-Read `/tmp/sprint_pulse_alerts.json` for the deterministic alerts. Combine with any outstanding questions detected in Step 6.
+Read `/tmp/sprint_pulse_alerts.json` for the deterministic alerts and `/tmp/sprint_pulse_data.json` for the DORA snapshot (under the `dora` key). Combine with any outstanding questions detected in Step 6.
 
 Generate the output in this format:
 
@@ -179,6 +179,17 @@ Generate the output in this format:
 ## Sprint Snapshot
 - Active sprint: {sprint_name} ({start_date} to {end_date})
 - To do: {todo_count} | In progress: {in_progress_count} | In review: {in_review_count} | Done: {completed}/{total}
+
+## DORA Snapshot
+- **Deployment frequency:** {days_with_deploys}/{elapsed_days} days with deploys ({deploys_per_day}/day) — {deploy_rating}
+- **Lead time for changes:** {lead_time_median_display} median, {lead_time_p90_display} p90 — {lead_time_rating}
+- Scope: {deploy_count} merges to `{default_branch}` by {team_author_count} team members
+
+{If lead_time_rating is null: replace lead time line with "- **Lead time for changes:** insufficient data"}
+{If deploy_count is 0: replace frequency line with "- **Deployment frequency:** no deployments yet this sprint — Low"}
+{If dora data is missing (sprint hasn't started): omit the DORA Snapshot section entirely}
+
+> **Note:** Both metrics cover all team MRs merged to the default branch (not just sprint-linked MRs). Deployment frequency uses elapsed sprint days as denominator (not full sprint duration). Lead time scope differs from `/sprint-metrics` which uses sprint-linked MRs only.
 
 ## Alerts
 
@@ -250,6 +261,9 @@ support_new_count: {new_count}
 support_unack_count: {unack_count}
 support_sla_count: {sla_count}
 question_count: {question_count}
+dora_deploy_rating: "{deploy_rating}"
+dora_lead_time_rating: "{lead_time_rating}"
+dora_deploys_per_day: {deploys_per_day}
 generated: {ISO 8601 UTC timestamp}
 ---
 ```

@@ -75,6 +75,40 @@ def gitlab_get(gitlab_url, path, token):
         raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
 
 
+def gitlab_get_all(gitlab_url, path, token, max_pages=50):
+    """GET all pages from a GitLab API endpoint. Returns concatenated list."""
+    results = []
+    url = gitlab_url + "/api/v4" + path
+    page_count = 0
+    while url and page_count < max_pages:
+        req = urllib.request.Request(
+            url,
+            headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
+        )
+        page_count += 1
+        try:
+            with _urlopen_with_retry(req) as resp:
+                data = json.loads(resp.read())
+                if isinstance(data, list):
+                    results.extend(data)
+                else:
+                    results.append(data)
+                next_page = resp.getheader("x-next-page")
+                if next_page:
+                    # Build next URL: always use full base with page param
+                    base = gitlab_url + "/api/v4" + path
+                    if "?" in base:
+                        url = base + "&page=" + next_page
+                    else:
+                        url = base + "?page=" + next_page
+                else:
+                    url = None
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+            raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
+    return results
+
+
 def search_mrs_for_issue(gitlab_url, token, project_id, issue_key):
     """Search GitLab for MRs linked to a Jira issue key.
 

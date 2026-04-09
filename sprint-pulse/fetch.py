@@ -5,11 +5,12 @@ import json
 import re
 import sys
 import argparse
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from jira_client import load_env, init_auth, jira_get, jira_search_all, jira_get_changelog, jira_get_comments
-from gitlab_client import load_gitlab_env, gitlab_get, search_mrs_for_issue, get_mr_notes
+from gitlab_client import load_gitlab_env, gitlab_get, gitlab_get_all, search_mrs_for_issue, get_mr_notes
 
 
 def parse_args():
@@ -62,6 +63,263 @@ def get_status_column(issue, board_config):
         if status_id in col.get("statuses", []):
             return col["name"]
     return status_name
+
+
+def parse_dt(dt_str):
+    """Parse an ISO datetime string to a timezone-aware datetime."""
+    if not dt_str:
+        return None
+    dt_str = dt_str.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(dt_str)
+    except Exception:
+        try:
+            return datetime.strptime(dt_str[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+
+def fmt_duration(seconds):
+    """Format seconds as a human-readable duration."""
+    if seconds is None or seconds < 0:
+        return "-"
+    minutes = int(seconds / 60)
+    hours = int(minutes / 60)
+    days = int(hours / 24)
+    if days > 0:
+        remaining_hours = hours % 24
+        if remaining_hours > 0:
+            return "%dd %dh" % (days, remaining_hours)
+        return "%dd" % days
+    if hours > 0:
+        remaining_mins = minutes % 60
+        if remaining_mins > 0:
+            return "%dh %dm" % (hours, remaining_mins)
+        return "%dh" % hours
+    return "%dm" % minutes
+
+
+def median(values):
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        return s[n // 2]
+    return (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def percentile(values, p):
+    """Compute the p-th percentile of a list of values."""
+    if not values:
+        return None
+    s = sorted(values)
+    k = (len(s) - 1) * (p / 100)
+    f = int(k)
+    c = f + 1
+    if c >= len(s):
+        return s[f]
+    return s[f] + (k - f) * (s[c] - s[f])
+
+
+def dora_deploy_rating(deploys_per_day):
+    """Return DORA rating for deployment frequency."""
+    if deploys_per_day >= 1.0:
+        return "Elite"
+    if deploys_per_day >= 1 / 7:
+        return "High"
+    if deploys_per_day >= 1 / 30:
+        return "Medium"
+    return "Low"
+
+
+def dora_lead_time_rating(median_seconds):
+    """Return DORA rating for lead time based on median seconds."""
+    if median_seconds is None:
+        return None
+    if median_seconds < 86400:
+        return "Elite"
+    if median_seconds < 604800:
+        return "High"
+    if median_seconds < 2592000:
+        return "Medium"
+    return "Low"
+
+
+def fetch_dora_snapshot(gitlab_url, gitlab_token, gitlab_project_id,
+                        all_issue_keys, start_date, end_date,
+                        known_authors=None):
+    """Fetch DORA deployment frequency and lead time for the sprint window.
+
+    Args:
+        known_authors: set of GitLab usernames already discovered from Step 3 MR search
+    """
+    empty_result = lambda branch: {
+        "deploy_count": 0, "days_with_deploys": 0, "sprint_days": 0,
+        "elapsed_days": 0, "deploys_per_day": 0, "deploy_rating": "Low",
+        "lead_time_median_s": None, "lead_time_median_display": "-",
+        "lead_time_p90_s": None, "lead_time_p90_display": "-",
+        "lead_time_rating": None, "default_branch": branch,
+        "team_authors": [],
+    }
+
+    # Check if sprint has started yet
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if today_str < start_date[:10]:
+        print("Sprint hasn't started yet — skipping DORA snapshot", file=sys.stderr)
+        return empty_result("main")
+
+    # Fetch default branch
+    default_branch = "main"
+    try:
+        project_info = gitlab_get(gitlab_url, "/projects/%s" % gitlab_project_id, gitlab_token)
+        default_branch = project_info.get("default_branch", "main")
+    except Exception as e:
+        print("Warning: Could not fetch default branch, using 'main': %s" % e, file=sys.stderr)
+
+    # Discover team authors by searching all sprint issue keys (any MR state).
+    # Step 3 only searches state=opened, so known_authors may miss authors with
+    # merged MRs on active issues. We search all keys here to catch them.
+    team_authors = set(known_authors or [])
+    print("Discovering team authors from %d sprint issue MRs (%d already known from active issues)..." % (
+        len(all_issue_keys), len(team_authors)), file=sys.stderr)
+
+    def search_mrs_any_state(key):
+        path = "/projects/%s/merge_requests?search=%s&per_page=20" % (
+            gitlab_project_id, urllib.parse.quote(key, safe=""))
+        try:
+            mrs = gitlab_get(gitlab_url, path, gitlab_token)
+            authors = set()
+            pattern = r'(?i)\b' + re.escape(key) + r'(?!\d)'
+            for mr in mrs:
+                combined = "%s %s %s" % (mr.get("title") or "", mr.get("description") or "", mr.get("source_branch") or "")
+                if re.search(pattern, combined):
+                    username = mr.get("author", {}).get("username", "")
+                    if username:
+                        authors.add(username)
+            return authors
+        except Exception:
+            return set()
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        future_to_key = {pool.submit(search_mrs_any_state, key): key for key in all_issue_keys}
+        for future in as_completed(future_to_key):
+            try:
+                team_authors.update(future.result())
+            except Exception as e:
+                print("WARNING: Author search failed for %s: %s" % (future_to_key[future], e), file=sys.stderr)
+
+    if not team_authors:
+        print("No team authors found — DORA snapshot will show zero deployments", file=sys.stderr)
+        return empty_result(default_branch)
+
+    print("Team authors: %s" % ", ".join(sorted(team_authors)), file=sys.stderr)
+
+    # Fetch all merged MRs to default branch during sprint window
+    # Use min(today, end_date) for elapsed days since pulse runs mid-sprint
+    today_date = datetime.strptime(today_str, "%Y-%m-%d")
+    end_date_parsed = datetime.strptime(end_date[:10], "%Y-%m-%d")
+    effective_end = min(end_date_parsed, today_date).strftime("%Y-%m-%d")
+
+    print("Fetching all merged MRs to '%s' for DORA (%s to %s)..." % (
+        default_branch, start_date[:10], effective_end), file=sys.stderr)
+    # GitLab API doesn't support filtering by merged_at directly, so we filter on
+    # updated_after/updated_before as a proxy and post-filter on merged_at below.
+    # This may over-fetch MRs updated (but not merged) in the window.
+    path = "/projects/%s/merge_requests?target_branch=%s&state=merged&updated_after=%sT00:00:00Z&updated_before=%sT23:59:59Z&per_page=100" % (
+        gitlab_project_id, urllib.parse.quote(default_branch, safe=""), start_date[:10], effective_end)
+    all_merged = gitlab_get_all(gitlab_url, path, gitlab_token)
+
+    # Post-filter on merged_at within sprint window
+    start_dt = parse_dt(start_date[:10] + "T00:00:00Z")
+    end_dt = parse_dt(effective_end + "T23:59:59Z")
+    team_merged = []
+    for mr in all_merged:
+        merged_at = mr.get("merged_at")
+        if not merged_at:
+            continue
+        merged_dt = parse_dt(merged_at)
+        if not merged_dt or not (start_dt <= merged_dt <= end_dt):
+            continue
+        if mr.get("author", {}).get("username", "") in team_authors:
+            team_merged.append(mr)
+
+    # Deployment frequency: count distinct days with at least one deploy
+    start_dt_dora = parse_dt(start_date[:10] + "T00:00:00Z")
+    end_dt_dora = parse_dt(effective_end + "T00:00:00Z")
+    end_dt_full = parse_dt(end_date[:10] + "T00:00:00Z")
+    sprint_days_full = max((end_dt_full - start_dt_dora).days, 1)
+    elapsed_days = max((end_dt_dora - start_dt_dora).days, 1)
+    deploy_count = len(team_merged)
+
+    deploy_dates = set()
+    for m in team_merged:
+        merged_at = m.get("merged_at", "")
+        if merged_at:
+            deploy_dates.add(merged_at[:10])
+    days_with_deploys = len(deploy_dates)
+    deploys_per_day = days_with_deploys / elapsed_days
+
+    # Lead time: first authored commit to merge for each team MR
+    print("Fetching commits for %d team MRs (lead time)..." % len(team_merged), file=sys.stderr)
+    lead_times = []
+
+    def fetch_lead_time(mr):
+        iid = mr["iid"]
+        merged_at = parse_dt(mr.get("merged_at", ""))
+        if not merged_at:
+            return None
+        try:
+            commits = gitlab_get(gitlab_url, "/projects/%s/merge_requests/%s/commits?per_page=100" % (
+                gitlab_project_id, iid), gitlab_token)
+            if not commits:
+                return None
+            earliest = None
+            for c in commits:
+                cdt = parse_dt(c.get("authored_date") or c.get("committed_date") or c.get("created_at"))
+                if cdt and (earliest is None or cdt < earliest):
+                    earliest = cdt
+            if earliest:
+                return (merged_at - earliest).total_seconds()
+        except Exception:
+            pass
+        return None
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        future_to_iid = {pool.submit(fetch_lead_time, mr): mr["iid"] for mr in team_merged}
+        for future in as_completed(future_to_iid):
+            try:
+                result = future.result()
+                if result is not None and result >= 0:
+                    lead_times.append(result)
+            except Exception as e:
+                print("WARNING: Lead time fetch failed for MR !%s: %s" % (future_to_iid[future], e), file=sys.stderr)
+
+    lead_time_med = median(lead_times)
+    lead_time_p90 = percentile(lead_times, 90)
+
+    dora = {
+        "deploy_count": deploy_count,
+        "days_with_deploys": days_with_deploys,
+        "sprint_days": sprint_days_full,
+        "elapsed_days": elapsed_days,
+        "deploys_per_day": round(deploys_per_day, 2),
+        "deploy_rating": dora_deploy_rating(deploys_per_day),
+        "lead_time_median_s": lead_time_med,
+        "lead_time_median_display": fmt_duration(lead_time_med),
+        "lead_time_p90_s": lead_time_p90,
+        "lead_time_p90_display": fmt_duration(lead_time_p90),
+        "lead_time_rating": dora_lead_time_rating(lead_time_med),
+        "default_branch": default_branch,
+        "team_authors": sorted(team_authors),
+    }
+
+    print("DORA: %d deployments on %d/%d days (%.2f/day, %s) | Lead time median: %s (%s)" % (
+        deploy_count, days_with_deploys, elapsed_days, deploys_per_day, dora["deploy_rating"],
+        fmt_duration(lead_time_med), dora["lead_time_rating"] or "N/A",
+    ), file=sys.stderr)
+
+    return dora
 
 
 def main():
@@ -327,6 +585,19 @@ def main():
     elif args.support_project_key and not has_team_filter:
         print("Skipping support tickets: no team filter configured (SUPPORT_TEAM_LABEL / SUPPORT_TEAM_FIELD_VALUES)", file=sys.stderr)
 
+    # Step 4.5: Fetch DORA snapshot
+    # Collect known MR authors from Step 3 to avoid re-searching active issue keys
+    known_authors = set()
+    for i in issues_data:
+        for mr in i.get("merge_requests", []):
+            author = mr.get("author", "")
+            if author:
+                known_authors.add(author)
+    all_issue_keys = [i["key"] for i in issues_data]
+    dora = fetch_dora_snapshot(gitlab_url, gitlab_token, gitlab_project_id,
+                               all_issue_keys, args.start_date, args.end_date,
+                               known_authors=known_authors)
+
     # Step 5: Save all data
     output = {
         "sprint": {
@@ -348,14 +619,16 @@ def main():
         },
         "issues": issues_data,
         "support_tickets": support_data,
+        "dora": dora,
     }
 
     with open("/tmp/sprint_pulse_data.json", "w") as f:
         json.dump(output, f, indent=2, default=str)
 
     print("\nData saved to /tmp/sprint_pulse_data.json", file=sys.stderr)
-    print("FETCH_COMPLETE|issues:%d|active:%d|mrs:%d|support:%d" % (
-        len(all_issues), len(active_issue_keys), mr_count, len(support_data)
+    print("FETCH_COMPLETE|issues:%d|active:%d|mrs:%d|support:%d|dora_deploys:%d" % (
+        len(all_issues), len(active_issue_keys), mr_count, len(support_data),
+        dora.get("deploy_count", 0)
     ))
 
 

@@ -15,7 +15,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
-| [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts from Jira sprint data, GitLab MRs, and support tickets |
+| [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
 ## Scheduled Execution
@@ -189,7 +189,7 @@ Two modes for working with root cause tickets on a Jira board:
 
 ### sprint-pulse
 
-Generate mid-sprint alerts by analysing Jira sprint data, GitLab MR activity, and support tickets. Surfaces stale items, support ticket issues, highest priority tickets, and outstanding questions.
+Generate mid-sprint alerts and DORA snapshot by analysing Jira sprint data, GitLab MR activity, and support tickets. Surfaces stale items, support ticket issues, highest priority tickets, outstanding questions, and deployment frequency / lead time metrics.
 
 ```bash
 /sprint-pulse                          # prompts for team
@@ -218,7 +218,7 @@ Generate engineering metrics from GitLab merge requests linked to Jira sprint is
 /sprint-metrics --team TeamA --dry-run    # preview without writing
 ```
 
-**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR. Also includes DORA metrics: Deployment Frequency (all MRs merged to default branch during sprint) and Lead Time for Changes (first commit to merge, median + P90), with DORA rating classifications (Elite/High/Medium/Low).
+**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR. Also includes DORA metrics: Deployment Frequency (days with at least one MR merged to default branch by team members, as a fraction of sprint days) and Lead Time for Changes (first commit to merge, median + P90), with DORA rating classifications (Elite/High/Medium/Low).
 
 **Prerequisites:**
 - `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and GitLab credentials in `~/.zshrc`

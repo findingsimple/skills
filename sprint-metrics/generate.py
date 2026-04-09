@@ -149,6 +149,8 @@ def dora_lead_time_rating(median_seconds):
 
 def fetch_all_merged_mrs(gitlab_url, gitlab_token, project_id, default_branch, start_date, end_date):
     """Fetch all MRs merged to the default branch during the sprint window."""
+    # GitLab API doesn't support filtering by merged_at directly, so we filter on
+    # updated_after/updated_before as a proxy and post-filter on merged_at below.
     path = "/projects/%s/merge_requests?target_branch=%s&state=merged&updated_after=%sT00:00:00Z&updated_before=%sT23:59:59Z&per_page=100" % (
         project_id, urllib.parse.quote(default_branch, safe=""), start_date, end_date,
     )
@@ -471,13 +473,21 @@ def main():
         end_dt_dora = datetime.strptime(end_date[:10], "%Y-%m-%d")
         sprint_days = max((end_dt_dora - start_dt_dora).days, 1)
         deploy_count = len(team_merged)
-        deploys_per_day = deploy_count / sprint_days
+        # Count distinct days with at least one deploy (measures regularity, not volume)
+        deploy_dates = set()
+        for m in team_merged:
+            merged_at = m.get("merged_at", "")
+            if merged_at:
+                deploy_dates.add(merged_at[:10])
+        days_with_deploys = len(deploy_dates)
+        deploys_per_day = days_with_deploys / sprint_days
 
         lead_time_med = median(cycle_values)
         lead_time_p90 = percentile(cycle_values, 90)
 
         dora_data = {
             "deploy_count": deploy_count,
+            "days_with_deploys": days_with_deploys,
             "sprint_days": sprint_days,
             "deploys_per_day": round(deploys_per_day, 2),
             "deploy_rating": dora_deploy_rating(deploys_per_day),
@@ -486,8 +496,8 @@ def main():
             "lead_time_rating": dora_lead_time_rating(lead_time_med),
             "default_branch": default_branch,
         }
-        print("DORA: %d deployments over %d days (%.2f/day, %s) | Lead time median: %s (%s)" % (
-            deploy_count, sprint_days, deploys_per_day, dora_data["deploy_rating"],
+        print("DORA: %d deployments on %d/%d days (%.2f/day, %s) | Lead time median: %s (%s)" % (
+            deploy_count, days_with_deploys, sprint_days, deploys_per_day, dora_data["deploy_rating"],
             fmt_duration(lead_time_med), dora_data["lead_time_rating"] or "N/A",
         ), file=sys.stderr)
     except Exception as e:
@@ -519,6 +529,7 @@ def main():
     lines.append("avg_cycle_time_h: %s" % (round(avg_cycle / 3600, 1) if avg_cycle else "null"))
     if dora_data:
         lines.append("dora_deploy_count: %d" % dora_data["deploy_count"])
+        lines.append("dora_days_with_deploys: %d" % dora_data["days_with_deploys"])
         lines.append("dora_deploys_per_day: %s" % dora_data["deploys_per_day"])
         lines.append('dora_deploy_rating: "%s"' % dora_data["deploy_rating"])
         lines.append("dora_lead_time_median_h: %s" % (round(dora_data["lead_time_median_s"] / 3600, 1) if dora_data["lead_time_median_s"] else "null"))
@@ -550,7 +561,7 @@ def main():
     if dora_data:
         lines.append("## DORA Metrics")
         lines.append("")
-        lines.append("> **Deployment Frequency** counts all MRs merged to `%s` by team members during the sprint window — including MRs not linked to sprint issues (e.g., infra, chores, hotfixes). This may differ from the sprint MR count above, which only includes MRs linked to sprint issues." % dora_data["default_branch"])
+        lines.append("> **Deployment Frequency** measures how many days had at least one MR merged to `%s` by team members during the sprint window, reflecting deploy regularity rather than volume. MR count includes all merges (infra, chores, hotfixes) — not just sprint-linked MRs." % dora_data["default_branch"])
         lines.append(">")
         lines.append("> **Lead Time for Changes** measures first authored commit to merge for sprint-linked MRs only.")
         lines.append("")
@@ -558,8 +569,8 @@ def main():
         lines.append("")
         lines.append("| Metric | Value |")
         lines.append("|--------|-------|")
-        lines.append("| Deployments | %d |" % dora_data["deploy_count"])
-        lines.append("| Sprint duration | %d days |" % dora_data["sprint_days"])
+        lines.append("| Total MRs merged | %d |" % dora_data["deploy_count"])
+        lines.append("| Days with deploys | %d / %d |" % (dora_data["days_with_deploys"], dora_data["sprint_days"]))
         lines.append("| Frequency | %s / day |" % dora_data["deploys_per_day"])
         lines.append("| DORA Rating | **%s** |" % dora_data["deploy_rating"])
         lines.append("")
