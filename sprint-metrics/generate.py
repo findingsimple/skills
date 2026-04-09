@@ -458,15 +458,18 @@ def main():
     issues_with_mrs = len(issue_mr_links)
     issues_without_mrs = len(issue_keys) - issues_with_mrs
 
-    # DORA metrics
+    # DORA metrics — scoped to team members (authors who have MRs linked to sprint issues)
     dora_data = None
     try:
-        print("Fetching all merged MRs to '%s' for DORA deployment frequency..." % default_branch, file=sys.stderr)
+        team_authors = set(m["author"] for m in included_mrs if m.get("author"))
+        print("Fetching all merged MRs to '%s' for DORA deployment frequency (team: %s)..." % (
+            default_branch, ", ".join(sorted(team_authors))), file=sys.stderr)
         all_merged = fetch_all_merged_mrs(gitlab_url, gitlab_token, gitlab_project_id, default_branch, start_date, end_date)
+        team_merged = [m for m in all_merged if m.get("author", {}).get("username", "") in team_authors]
         start_dt_dora = datetime.strptime(start_date[:10], "%Y-%m-%d")
         end_dt_dora = datetime.strptime(end_date[:10], "%Y-%m-%d")
         sprint_days = max((end_dt_dora - start_dt_dora).days, 1)
-        deploy_count = len(all_merged)
+        deploy_count = len(team_merged)
         deploys_per_day = deploy_count / sprint_days
 
         lead_time_med = median(cycle_values)
@@ -546,7 +549,7 @@ def main():
     if dora_data:
         lines.append("## DORA Metrics")
         lines.append("")
-        lines.append("> Deployment = merge to `%s`. Lead Time = first commit to merge (sprint-linked MRs only)." % dora_data["default_branch"])
+        lines.append("> Deployment = merge to `%s` by team members. Lead Time = first commit to merge (sprint-linked MRs only)." % dora_data["default_branch"])
         lines.append("")
         lines.append("### Deployment Frequency")
         lines.append("")
