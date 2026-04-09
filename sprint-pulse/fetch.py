@@ -160,12 +160,15 @@ def main():
         return key, changelog, comments
 
     with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = [pool.submit(fetch_issue_details, key) for key in active_issue_keys]
-        for future in as_completed(futures):
-            key, changelog, comments = future.result()
-            if key in issue_map:
-                issue_map[key]["changelog"] = changelog
-                issue_map[key]["comments"] = comments
+        future_to_key = {pool.submit(fetch_issue_details, key): key for key in active_issue_keys}
+        for future in as_completed(future_to_key):
+            try:
+                key, changelog, comments = future.result()
+                if key in issue_map:
+                    issue_map[key]["changelog"] = changelog
+                    issue_map[key]["comments"] = comments
+            except Exception as e:
+                print("WARNING: Failed to fetch details for %s: %s" % (future_to_key[future], e), file=sys.stderr)
 
     # Step 3: Fetch GitLab MRs for active issues (parallel)
     print("Searching GitLab for MRs linked to active issues...", file=sys.stderr)
@@ -191,11 +194,14 @@ def main():
         return key, mr_data_list
 
     with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = [pool.submit(fetch_mrs_for_key, key) for key in active_issue_keys]
-        for future in as_completed(futures):
-            key, mr_data_list = future.result()
-            if key in issue_map:
-                issue_map[key]["merge_requests"] = mr_data_list
+        future_to_key = {pool.submit(fetch_mrs_for_key, key): key for key in active_issue_keys}
+        for future in as_completed(future_to_key):
+            try:
+                key, mr_data_list = future.result()
+                if key in issue_map:
+                    issue_map[key]["merge_requests"] = mr_data_list
+            except Exception as e:
+                print("WARNING: Failed to fetch MRs for %s: %s" % (future_to_key[future], e), file=sys.stderr)
 
     mr_count = sum(len(i["merge_requests"]) for i in issues_data)
     print("Found %d MRs linked to active issues" % mr_count, file=sys.stderr)
@@ -307,11 +313,14 @@ def main():
 
                 support_map = {t["key"]: t for t in support_data}
                 with ThreadPoolExecutor(max_workers=10) as pool:
-                    futures = [pool.submit(fetch_support_comments, t["key"]) for t in open_tickets]
-                    for future in as_completed(futures):
-                        key, comments = future.result()
-                        if key in support_map:
-                            support_map[key]["comments"] = comments
+                    future_to_key = {pool.submit(fetch_support_comments, t["key"]): t["key"] for t in open_tickets}
+                    for future in as_completed(future_to_key):
+                        try:
+                            key, comments = future.result()
+                            if key in support_map:
+                                support_map[key]["comments"] = comments
+                        except Exception as e:
+                            print("WARNING: Failed to fetch comments for %s: %s" % (future_to_key[future], e), file=sys.stderr)
 
         except Exception as e:
             print("WARNING: Could not fetch support tickets: %s" % e, file=sys.stderr)

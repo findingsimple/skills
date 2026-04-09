@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -36,6 +37,31 @@ def init_auth(env):
     return base_url, auth
 
 
+def _urlopen_with_retry(req, timeout=30, max_retries=3, base_delay=1.0):
+    """urlopen with retry and exponential backoff for transient errors."""
+    for attempt in range(max_retries + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < max_retries:
+                retry_after = e.headers.get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after else base_delay * (2 ** attempt)
+                except (ValueError, TypeError):
+                    delay = base_delay * (2 ** attempt)
+                print("HTTP %d, retrying in %.1fs... (%s)" % (e.code, delay, req.full_url), file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                print("Network error: %s, retrying in %.1fs... (%s)" % (e, delay, req.full_url), file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise
+
+
 def jira_get(base_url, path, auth):
     """GET a JSON response from the Jira API."""
     req = urllib.request.Request(
@@ -43,7 +69,7 @@ def jira_get(base_url, path, auth):
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _urlopen_with_retry(req) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
@@ -58,11 +84,43 @@ def gitlab_get(gitlab_url, path, token):
         headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _urlopen_with_retry(req) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
         raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
+
+
+def gitlab_get_all(gitlab_url, path, token):
+    """GET all pages from a GitLab API endpoint. Returns concatenated list."""
+    results = []
+    url = gitlab_url + "/api/v4" + path
+    while url:
+        req = urllib.request.Request(
+            url,
+            headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
+        )
+        try:
+            with _urlopen_with_retry(req) as resp:
+                data = json.loads(resp.read())
+                if isinstance(data, list):
+                    results.extend(data)
+                else:
+                    results.append(data)
+                next_page = resp.getheader("x-next-page")
+                if next_page:
+                    # Build next URL: always use full base with page param
+                    base = gitlab_url + "/api/v4" + path
+                    if "?" in base:
+                        url = base + "&page=" + next_page
+                    else:
+                        url = base + "?page=" + next_page
+                else:
+                    url = None
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+            raise Exception("GitLab API %d on %s: %s" % (e.code, path, body)) from None
+    return results
 
 
 def jira_search_all(base_url, auth, jql, fields):

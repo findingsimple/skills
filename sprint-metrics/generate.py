@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from jira_client import load_env, init_auth, jira_get, gitlab_get
+from jira_client import load_env, init_auth, jira_get, gitlab_get, gitlab_get_all
 
 
 def parse_args():
@@ -110,6 +110,64 @@ def median(values):
     return (s[n // 2 - 1] + s[n // 2]) / 2
 
 
+def percentile(values, p):
+    """Compute the p-th percentile of a list of values."""
+    if not values:
+        return None
+    s = sorted(values)
+    k = (len(s) - 1) * (p / 100)
+    f = int(k)
+    c = f + 1
+    if c >= len(s):
+        return s[f]
+    return s[f] + (k - f) * (s[c] - s[f])
+
+
+def dora_deploy_rating(deploys_per_day):
+    """Return DORA rating for deployment frequency."""
+    if deploys_per_day >= 1.0:
+        return "Elite"
+    if deploys_per_day >= 1 / 7:
+        return "High"
+    if deploys_per_day >= 1 / 30:
+        return "Medium"
+    return "Low"
+
+
+def dora_lead_time_rating(median_seconds):
+    """Return DORA rating for lead time based on median seconds."""
+    if median_seconds is None:
+        return None
+    if median_seconds < 86400:
+        return "Elite"
+    if median_seconds < 604800:
+        return "High"
+    if median_seconds < 2592000:
+        return "Medium"
+    return "Low"
+
+
+def fetch_all_merged_mrs(gitlab_url, gitlab_token, project_id, default_branch, start_date, end_date):
+    """Fetch all MRs merged to the default branch during the sprint window."""
+    path = "/projects/%s/merge_requests?target_branch=%s&state=merged&updated_after=%sT00:00:00Z&updated_before=%sT23:59:59Z&per_page=100" % (
+        project_id, urllib.parse.quote(default_branch, safe=""), start_date, end_date,
+    )
+    all_mrs = gitlab_get_all(gitlab_url, path, gitlab_token)
+
+    # Post-filter on merged_at (API filters on updated_at)
+    filtered = []
+    for mr in all_mrs:
+        merged_at = mr.get("merged_at")
+        if not merged_at:
+            continue
+        merged_dt = parse_dt(merged_at)
+        start_dt = parse_dt(start_date + "T00:00:00Z")
+        end_dt = parse_dt(end_date + "T23:59:59Z")
+        if start_dt <= merged_dt <= end_dt:
+            filtered.append(mr)
+    return filtered
+
+
 def main():
     args = parse_args()
     env = load_env([
@@ -123,6 +181,15 @@ def main():
     gitlab_url = env["GITLAB_URL"]
     gitlab_token = env["GITLAB_TOKEN"]
     gitlab_project_id = env["GITLAB_PROJECT_ID"]
+
+    # Fetch default branch for DORA deployment frequency
+    default_branch = "main"
+    try:
+        project_info = gitlab_get(gitlab_url, "/projects/%s" % gitlab_project_id, gitlab_token)
+        default_branch = project_info.get("default_branch", "main")
+        print("Default branch: %s" % default_branch, file=sys.stderr)
+    except Exception as e:
+        print("Warning: Could not fetch default branch, using 'main': %s" % e, file=sys.stderr)
 
     # Step 1: Get sprint metadata and issue keys
     if args.summary_file:
@@ -198,13 +265,16 @@ def main():
         return key, matches
 
     with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = [pool.submit(search_mrs_for_key, key) for key in issue_keys]
-        for future in as_completed(futures):
-            key, matches = future.result()
-            for mr in matches:
-                iid = mr["iid"]
-                mr_map[iid] = mr
-                issue_mr_links[key].append(iid)
+        future_to_key = {pool.submit(search_mrs_for_key, key): key for key in issue_keys}
+        for future in as_completed(future_to_key):
+            try:
+                key, matches = future.result()
+                for mr in matches:
+                    iid = mr["iid"]
+                    mr_map[iid] = mr
+                    issue_mr_links[key].append(iid)
+            except Exception as e:
+                print("WARNING: Failed to search MRs for %s: %s" % (future_to_key[future], e), file=sys.stderr)
 
     unique_mrs = list(mr_map.values())
     print("Found %d unique MRs linked to sprint issues" % len(unique_mrs), file=sys.stderr)
@@ -345,9 +415,12 @@ def main():
 
     mr_metrics = []
     with ThreadPoolExecutor(max_workers=5) as pool:
-        futures = [pool.submit(fetch_mr_metrics, mr) for mr in unique_mrs]
-        for future in as_completed(futures):
-            mr_metrics.append(future.result())
+        future_to_iid = {pool.submit(fetch_mr_metrics, mr): mr["iid"] for mr in unique_mrs}
+        for future in as_completed(future_to_iid):
+            try:
+                mr_metrics.append(future.result())
+            except Exception as e:
+                print("WARNING: Failed to fetch metrics for MR !%s: %s" % (future_to_iid[future], e), file=sys.stderr)
 
     # Step 4: Exclude stale MRs (open + created before sprint start) from metrics
     sprint_start_dt = parse_dt(start_date + "T00:00:00Z")
@@ -385,6 +458,37 @@ def main():
     issues_with_mrs = len(issue_mr_links)
     issues_without_mrs = len(issue_keys) - issues_with_mrs
 
+    # DORA metrics
+    dora_data = None
+    try:
+        print("Fetching all merged MRs to '%s' for DORA deployment frequency..." % default_branch, file=sys.stderr)
+        all_merged = fetch_all_merged_mrs(gitlab_url, gitlab_token, gitlab_project_id, default_branch, start_date, end_date)
+        start_dt_dora = datetime.strptime(start_date[:10], "%Y-%m-%d")
+        end_dt_dora = datetime.strptime(end_date[:10], "%Y-%m-%d")
+        sprint_days = max((end_dt_dora - start_dt_dora).days, 1)
+        deploy_count = len(all_merged)
+        deploys_per_day = deploy_count / sprint_days
+
+        lead_time_med = median(cycle_values)
+        lead_time_p90 = percentile(cycle_values, 90)
+
+        dora_data = {
+            "deploy_count": deploy_count,
+            "sprint_days": sprint_days,
+            "deploys_per_day": round(deploys_per_day, 2),
+            "deploy_rating": dora_deploy_rating(deploys_per_day),
+            "lead_time_median_s": lead_time_med,
+            "lead_time_p90_s": lead_time_p90,
+            "lead_time_rating": dora_lead_time_rating(lead_time_med),
+            "default_branch": default_branch,
+        }
+        print("DORA: %d deployments over %d days (%.2f/day, %s) | Lead time median: %s (%s)" % (
+            deploy_count, sprint_days, deploys_per_day, dora_data["deploy_rating"],
+            fmt_duration(lead_time_med), dora_data["lead_time_rating"] or "N/A",
+        ), file=sys.stderr)
+    except Exception as e:
+        print("Warning: Could not compute DORA metrics: %s" % e, file=sys.stderr)
+
     # Step 5: Generate markdown
     print("Generating markdown...", file=sys.stderr)
 
@@ -409,6 +513,13 @@ def main():
     lines.append("avg_review_turnaround_h: %s" % (round(avg_review / 3600, 1) if avg_review else "null"))
     lines.append("avg_time_to_approval_h: %s" % (round(avg_approval / 3600, 1) if avg_approval else "null"))
     lines.append("avg_cycle_time_h: %s" % (round(avg_cycle / 3600, 1) if avg_cycle else "null"))
+    if dora_data:
+        lines.append("dora_deploy_count: %d" % dora_data["deploy_count"])
+        lines.append("dora_deploys_per_day: %s" % dora_data["deploys_per_day"])
+        lines.append('dora_deploy_rating: "%s"' % dora_data["deploy_rating"])
+        lines.append("dora_lead_time_median_h: %s" % (round(dora_data["lead_time_median_s"] / 3600, 1) if dora_data["lead_time_median_s"] else "null"))
+        lines.append("dora_lead_time_p90_h: %s" % (round(dora_data["lead_time_p90_s"] / 3600, 1) if dora_data["lead_time_p90_s"] else "null"))
+        lines.append('dora_lead_time_rating: "%s"' % (dora_data["lead_time_rating"] or "null"))
     lines.append("generated: " + now_utc)
     lines.append("source: gitlab")
     lines.append("---")
@@ -430,6 +541,32 @@ def main():
         lines.append("| Excluded MRs | %d |" % len(excluded_mrs))
     lines.append("| Issues with MRs | %d / %d |" % (issues_with_mrs, len(issue_keys)))
     lines.append("")
+
+    # DORA metrics section
+    if dora_data:
+        lines.append("## DORA Metrics")
+        lines.append("")
+        lines.append("> Deployment = merge to `%s`. Lead Time = first commit to merge (sprint-linked MRs only)." % dora_data["default_branch"])
+        lines.append("")
+        lines.append("### Deployment Frequency")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append("| Deployments | %d |" % dora_data["deploy_count"])
+        lines.append("| Sprint duration | %d days |" % dora_data["sprint_days"])
+        lines.append("| Frequency | %s / day |" % dora_data["deploys_per_day"])
+        lines.append("| DORA Rating | **%s** |" % dora_data["deploy_rating"])
+        lines.append("")
+        lines.append("### Lead Time for Changes")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append("| Median | %s |" % fmt_duration(dora_data["lead_time_median_s"]))
+        lines.append("| P90 | %s |" % fmt_duration(dora_data["lead_time_p90_s"]))
+        lines.append("| DORA Rating | **%s** |" % (dora_data["lead_time_rating"] or "N/A"))
+        lines.append("")
+        lines.append("> **DORA Ratings:** Elite (deploy on-demand, lead time < 1d) · High (daily-weekly, < 1wk) · Medium (weekly-monthly, < 1mo) · Low (monthly+, 1mo+)")
+        lines.append("")
 
     # Timing metrics
     lines.append("## Timing")
@@ -538,8 +675,13 @@ def main():
         os.replace(tmp_file, file_path)
         print("\nSprint metrics written to: " + file_path)
 
-    print("%d MRs | TTM: %s | Review: %s | Cycle: %s" % (
-        len(merged_mrs), fmt_duration(avg_ttm), fmt_duration(avg_review), fmt_duration(avg_cycle),
+    dora_suffix = ""
+    if dora_data:
+        dora_suffix = " | DORA Deploy: %s | DORA Lead: %s" % (
+            dora_data["deploy_rating"], dora_data["lead_time_rating"] or "N/A",
+        )
+    print("%d MRs | TTM: %s | Review: %s | Cycle: %s%s" % (
+        len(merged_mrs), fmt_duration(avg_ttm), fmt_duration(avg_review), fmt_duration(avg_cycle), dora_suffix,
     ))
 
 
