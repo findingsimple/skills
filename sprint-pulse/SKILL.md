@@ -74,6 +74,8 @@ Record the selected team's values:
 - Active sprint: `sprint_id`, `sprint_name`, `start_date`, `end_date`
 - Support config: `support_project_key`, `support_label`, `support_team_field` (from setup output)
 
+**Normalize `sprint_name`:** if it matches `{PROJECT} Sprint {YEAR} {N}` (e.g., `COPS Sprint 2026 7`), rewrite it to `{PROJECT} {YEAR} Sprint {N}` (e.g., `COPS 2026 Sprint 7`). This ensures consistent naming across all teams.
+
 If the selected team has no active sprint, inform the user and stop.
 
 Show:
@@ -245,7 +247,9 @@ Print the full output to stdout so the user can copy-paste it.
 If `--dry-run` was **not** specified:
 
 Write the output as a markdown file with YAML frontmatter to:
-`{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - Pulse - {YYYY-MM-DD}.md`
+`{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - Pulse - {YYYY-MM-DD}.md`
+
+where `{N}` is extracted from `{sprint_name}` (e.g., `ACE 2026 Sprint 7` → `Sprint 7`).
 
 Frontmatter:
 ```yaml
@@ -270,7 +274,7 @@ generated: {ISO 8601 UTC timestamp}
 
 Create the output directory if needed:
 ```bash
-mkdir -p "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints"
+mkdir -p "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}"
 ```
 
 Use the Write tool to create the file.

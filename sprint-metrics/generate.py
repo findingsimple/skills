@@ -14,6 +14,14 @@ from collections import defaultdict
 from jira_client import load_env, init_auth, jira_get, gitlab_get, gitlab_get_all
 
 
+def normalize_sprint_name(name):
+    """Normalize sprint name to '{PROJECT} {YEAR} Sprint {N}' format."""
+    m = re.match(r'^(\w+)\s+Sprint\s+(\d{4})\s+(\d+)$', name)
+    if m:
+        return "%s %s Sprint %s" % (m.group(1), m.group(2), m.group(3))
+    return name
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--summary-file", help="Path to existing sprint summary .md file (skips Jira sprint report)")
@@ -198,7 +206,7 @@ def main():
         print("Reading sprint summary from: %s" % args.summary_file, file=sys.stderr)
         frontmatter, issue_keys = parse_summary_file(args.summary_file)
         sprint_id = args.sprint_id or frontmatter.get("sprint_id", "")
-        sprint_name = args.sprint_name or frontmatter.get("sprint_name", "")
+        sprint_name = normalize_sprint_name(args.sprint_name or frontmatter.get("sprint_name", ""))
         start_date = (args.start_date or frontmatter.get("start_date", ""))[:10]
         end_date = (args.end_date or frontmatter.get("end_date", ""))[:10]
         board_id = args.board_id or ""
@@ -216,7 +224,7 @@ def main():
                 display_name = vault_dir
     else:
         sprint_id = args.sprint_id
-        sprint_name = args.sprint_name
+        sprint_name = normalize_sprint_name(args.sprint_name)
         start_date = args.start_date[:10]
         end_date = args.end_date[:10]
         board_id = args.board_id
@@ -235,6 +243,10 @@ def main():
         not_completed_issues = contents.get("issuesNotCompletedInCurrentSprint", [])
         all_parent_issues = completed_issues + not_completed_issues
         issue_keys = [i["key"] for i in all_parent_issues]
+
+    if not sprint_name:
+        print("ERROR: sprint_name is required", file=sys.stderr)
+        sys.exit(1)
 
     print("Found %d sprint issues: %s" % (len(issue_keys), ", ".join(issue_keys[:10])), file=sys.stderr)
     if len(issue_keys) > 10:
@@ -677,7 +689,9 @@ def main():
     md = "\n".join(lines) + "\n"
 
     # Write or dry-run
-    output_dir = os.path.join(teams_path, vault_dir, "Sprints")
+    sprint_num_match = re.search(r'Sprint\s+(\d+)', sprint_name)
+    sprint_subdir = "Sprint %s" % sprint_num_match.group(1) if sprint_num_match else sprint_name
+    output_dir = os.path.join(teams_path, vault_dir, "Sprints", sprint_subdir)
     filename = "%s - %s - Metrics.md" % (sprint_name, end_date)
     file_path = os.path.join(output_dir, filename)
 

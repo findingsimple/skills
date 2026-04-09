@@ -85,7 +85,7 @@ GITLAB_PROJECT: {project_id}
 ### Step 3 — Select team and sprint
 
 **Check for existing sprint summary first:**
-- Look for a matching sprint summary file in `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - {end_date}.md`
+- Look for a matching sprint summary file in `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - {end_date}.md`
 - If found, use `--summary-file` mode (skips Jira sprint report API, reads issue keys from the summary)
 - If not found, fall back to manual sprint/team selection and Jira API
 
@@ -119,7 +119,7 @@ The script:
 5. Calculates aggregate and per-author metrics
 6. Writes markdown to the Obsidian vault
 
-**Output path:** `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - {end_date} - Metrics.md`
+**Output path:** `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - {end_date} - Metrics.md`
 
 ### Step 5 — Confirm completion
 

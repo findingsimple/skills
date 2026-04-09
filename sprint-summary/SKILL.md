@@ -97,7 +97,7 @@ python3 ~/.claude/skills/sprint-summary/generate.py --sprint-id {ID} --sprint-na
 
 The script fetches sprint report data, subtasks, and support tickets, calculates metrics, generates markdown, and writes to the Obsidian vault.
 
-**Output path:** `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/{sprint_name} - {end_date}.md`
+**Output path:** `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - {end_date}.md`
 
 ### Step 6 — Confirm completion
 

@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sys
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,6 +11,14 @@ from datetime import datetime, timezone
 from collections import defaultdict
 
 from jira_client import load_env, init_auth, jira_get, jira_search_all
+
+
+def normalize_sprint_name(name):
+    """Normalize sprint name to '{PROJECT} {YEAR} Sprint {N}' format."""
+    m = re.match(r'^(\w+)\s+Sprint\s+(\d{4})\s+(\d+)$', name)
+    if m:
+        return "%s %s Sprint %s" % (m.group(1), m.group(2), m.group(3))
+    return name
 
 
 def parse_args():
@@ -57,7 +66,10 @@ def main():
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
 
     sprint_id = args.sprint_id
-    sprint_name = args.sprint_name
+    sprint_name = normalize_sprint_name(args.sprint_name)
+    if not sprint_name:
+        print("ERROR: sprint_name is required", file=sys.stderr)
+        sys.exit(1)
     start_date = args.start_date[:10]
     end_date = args.end_date[:10]
     goal = args.goal
@@ -284,7 +296,9 @@ def main():
     md = "\n".join(lines) + "\n"
 
     # Write or dry-run
-    output_dir = os.path.join(teams_path, vault_dir, "Sprints")
+    sprint_num_match = re.search(r'Sprint\s+(\d+)', sprint_name)
+    sprint_subdir = "Sprint %s" % sprint_num_match.group(1) if sprint_num_match else sprint_name
+    output_dir = os.path.join(teams_path, vault_dir, "Sprints", sprint_subdir)
     filename = "%s - %s.md" % (sprint_name, end_date)
     file_path = os.path.join(output_dir, filename)
 
