@@ -1,6 +1,6 @@
 ---
 name: sprint-metrics
-description: Generates engineering metrics (MR counts, time to merge, review turnaround, cycle time) from GitLab for a Jira sprint. Use when the user asks for sprint metrics, merge request stats, cycle time data, or engineering performance numbers.
+description: Generates engineering metrics (MR counts, time to merge, review turnaround, cycle time, DORA deployment frequency, DORA lead time) from GitLab for a Jira sprint. Use when the user asks for sprint metrics, merge request stats, cycle time data, DORA metrics, or engineering performance numbers.
 disable-model-invocation: true
 argument-hint: "[sprint-name] [--team <name>] [--dry-run]"
 allowed-tools: Bash Read Glob AskUserQuestion
@@ -28,6 +28,8 @@ This skill uses **two Python scripts** (`setup.py` and `generate.py`) in the ski
 - **Review Turnaround** — MR created → first non-author response (comment or approval, whichever is earlier) (average + median)
 - **Time to Approval** — MR created → first approval (average + median)
 - **Cycle Time** — first commit on branch → MR merged (average + median)
+- **Deployment Frequency (DORA)** — count and daily rate of all MRs merged to default branch during the sprint window, with DORA rating
+- **Lead Time for Changes (DORA)** — first commit to merge for sprint-linked MRs (median + P90), with DORA rating
 
 ### How MRs are linked to sprint issues
 
@@ -125,6 +127,6 @@ After the generate script finishes, show the user the summary:
 
 ```
 Sprint metrics generated:
-- {team}: {sprint_name} → {MR count} MRs | TTM: {avg} | Review: {avg} | Cycle: {avg}
+- {team}: {sprint_name} → {MR count} MRs | TTM: {avg} | Review: {avg} | Cycle: {avg} | DORA Deploy: {rating} | DORA Lead: {rating}
 - File: {file_path}
 ```

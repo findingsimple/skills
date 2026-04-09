@@ -44,9 +44,9 @@ Each skill lives in its own directory with a `SKILL.md` file:
     DUPLICATE_PROMPT.md # Agent prompt for semantic duplicate detection (analyze Step A2c)
   sprint-metrics/
     SKILL.md
-    jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, jira_search_all, gitlab_get)
+    jira_client.py      # Jira + GitLab API client (load_env, auth, jira_get, jira_search_all, gitlab_get, gitlab_get_all)
     setup.py            # Validates env, discovers boards/sprints
-    generate.py         # Fetches GitLab MR data, calculates metrics, writes markdown
+    generate.py         # Fetches GitLab MR data, calculates metrics + DORA (deployment frequency, lead time), writes markdown
   sprint-pulse/
     SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
     alerts.md           # Alert definitions, thresholds, output templates

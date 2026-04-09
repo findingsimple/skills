@@ -14,7 +14,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
-| [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) from GitLab for a sprint |
+| [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 
@@ -218,7 +218,7 @@ Generate engineering metrics from GitLab merge requests linked to Jira sprint is
 /sprint-metrics --team TeamA --dry-run    # preview without writing
 ```
 
-**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR.
+**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR. Also includes DORA metrics: Deployment Frequency (all MRs merged to default branch during sprint) and Lead Time for Changes (first commit to merge, median + P90), with DORA rating classifications (Elite/High/Medium/Low).
 
 **Prerequisites:**
 - `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and GitLab credentials in `~/.zshrc`
