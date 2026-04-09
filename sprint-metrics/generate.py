@@ -364,11 +364,12 @@ def main():
             approvals_data = f_approvals.result() or {}
             notes_data = f_notes.result() or []
 
-        # Cycle time from commits
+        # Cycle time from commits — use authored_date (when code was written),
+        # not created_at (when pushed/rebased, which resets on rebase)
         if merged_dt and commits_data:
             commit_dates = []
             for c in commits_data:
-                cdt = parse_dt(c.get("created_at") or c.get("committed_date") or c.get("authored_date"))
+                cdt = parse_dt(c.get("authored_date") or c.get("committed_date") or c.get("created_at"))
                 if cdt:
                     commit_dates.append(cdt)
             if commit_dates:
@@ -549,7 +550,9 @@ def main():
     if dora_data:
         lines.append("## DORA Metrics")
         lines.append("")
-        lines.append("> Deployment = merge to `%s` by team members. Lead Time = first commit to merge (sprint-linked MRs only)." % dora_data["default_branch"])
+        lines.append("> **Deployment Frequency** counts all MRs merged to `%s` by team members during the sprint window — including MRs not linked to sprint issues (e.g., infra, chores, hotfixes). This may differ from the sprint MR count above, which only includes MRs linked to sprint issues." % dora_data["default_branch"])
+        lines.append(">")
+        lines.append("> **Lead Time for Changes** measures first authored commit to merge for sprint-linked MRs only.")
         lines.append("")
         lines.append("### Deployment Frequency")
         lines.append("")
