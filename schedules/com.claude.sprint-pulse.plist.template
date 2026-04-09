@@ -10,7 +10,7 @@
         <string>/bin/zsh</string>
         <string>-l</string>
         <string>-c</string>
-        <string>{{HOME}}/.local/bin/claude -p "/sprint-pulse --team ACE" --allowedTools "Bash,Read,Glob,Write" --output-format text --no-session-persistence >> /tmp/claude-sprint-pulse.log 2>&amp;1</string>
+        <string>{{HOME}}/.local/bin/claude -p "/sprint-pulse --team ACE" --allowedTools "Bash,Read,Glob" --output-format text --no-session-persistence >> /tmp/claude-sprint-pulse.log 2>&amp;1</string>
     </array>
 
     <key>StartCalendarInterval</key>

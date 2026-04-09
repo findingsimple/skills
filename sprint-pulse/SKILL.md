@@ -53,6 +53,8 @@ Uses existing vars from other sprint skills plus two new ones:
 
 ## Instructions
 
+**Do not modify any source files** (`.py`, `.md`) in this skill directory. If a script fails with a transient error (connection refused, timeout), retry the script — do not attempt to edit it.
+
 ### Step 1 — Parse arguments
 
 Parse `$ARGUMENTS` for:
@@ -272,12 +274,13 @@ generated: {ISO 8601 UTC timestamp}
 ---
 ```
 
-Create the output directory if needed:
+Create the output directory and write the file using Bash (do **not** use the Write tool):
 ```bash
 mkdir -p "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}"
+cat << 'EOF' > "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - Pulse - {YYYY-MM-DD}.md"
+{full markdown content with frontmatter}
+EOF
 ```
-
-Use the Write tool to create the file.
 
 Report:
 ```
