@@ -3,7 +3,7 @@ name: retro-summary
 description: Extracts and summarizes retrospectives from FigJam boards into Obsidian vault. Use when the user shares a FigJam URL, asks to summarize a retro, or wants to pull retrospective data into Obsidian.
 disable-model-invocation: true
 argument-hint: "<figjam-url> [--team <name>] [--dry-run] [--list]"
-allowed-tools: Read Edit Write Glob Bash Agent WebFetch mcp__figma__get_figjam
+allowed-tools: Read Edit Glob Bash Agent WebFetch mcp__figma__get_figjam
 ---
 
 # Retro Summary
@@ -188,12 +188,15 @@ The main agent resumes from **Step 7** with the returned content.
 
 Parse the section date from the section name (e.g., "5 Nov 2025") into `YYYY-MM-DD` format for the file name.
 
-Create the `Retros/` directory if it doesn't exist:
+**Normal mode:** Create the directory and write the file using Bash (do **not** use the Write tool):
 ```bash
 mkdir -p "{OBSIDIAN_TEAMS_PATH}/{team_name}/Retros"
+cat << 'SKILL_EOF' > "{OBSIDIAN_TEAMS_PATH}/{team_name}/Retros/Retro - {YYYY-MM-DD}.md"
+{full markdown content with frontmatter}
+SKILL_EOF
 ```
 
-**Normal mode:** Use the Write tool to create the file with the content returned from Step 6. Confirm to the user:
+Confirm to the user:
 ```
 Retro summary written to: {file_path}
 ```

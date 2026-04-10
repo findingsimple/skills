@@ -277,9 +277,9 @@ generated: {ISO 8601 UTC timestamp}
 Create the output directory and write the file using Bash (do **not** use the Write tool):
 ```bash
 mkdir -p "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}"
-cat << 'EOF' > "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - Pulse - {YYYY-MM-DD}.md"
+cat << 'SKILL_EOF' > "{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Sprints/Sprint {N}/{sprint_name} - Pulse - {YYYY-MM-DD}.md"
 {full markdown content with frontmatter}
-EOF
+SKILL_EOF
 ```
 
 Report:

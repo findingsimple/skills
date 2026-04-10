@@ -105,12 +105,12 @@ Build a list of people: `[ { name, email, dir }, ... ]`
 Write the discovered people list to `/tmp/bonusly_people.json` using a bash heredoc:
 
 ```bash
-cat << 'EOF' > /tmp/bonusly_people.json
+cat << 'SKILL_EOF' > /tmp/bonusly_people.json
 [
   {"name": "Alex Chen", "email": "alex@example.com", "dir": "/path/to/vault/Teams/Team/Alex Chen"},
   ...
 ]
-EOF
+SKILL_EOF
 ```
 
 Then run:
