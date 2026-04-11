@@ -11,6 +11,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | Skill | Command | Description |
 |-------|---------|-------------|
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
+| [incident-kb](incident-kb/) | `/incident-kb` | Build searchable Obsidian knowledge base from Confluence incident retros and Jira INC epics |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
@@ -64,7 +65,7 @@ export OBSIDIAN_TEAMS_PATH="$OBSIDIAN_VAULT_PATH/Teams"
 # Bonusly (bonusly-sync)
 export BONUSLY_API_TOKEN="your_token_here"
 
-# Jira (sprint-summary, sprint-metrics, root-cause-triage)
+# Jira (sprint-summary, sprint-metrics, root-cause-triage, incident-kb)
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your_api_token"
@@ -86,6 +87,13 @@ export SUPPORT_TEAM_FIELD_VALUES="TeamA,TeamB|TeamC"
 # Root cause triage
 export TRIAGE_BOARD_ID="731"
 export TRIAGE_PARENT_ISSUE_KEY="PROJ-1234"
+
+# Incident KB
+export RETRO_PARENT_PAGE_ID="66895715"
+export INCIDENT_KB_OUTPUT_PATH="$OBSIDIAN_TEAMS_PATH/TeamA/Incidents"
+# Optional:
+export INC_PROJECT_KEY="INC"
+export RETRO_TEMPLATE_PAGE_ID="3485925377"
 ```
 
 ### Vault structure
@@ -124,6 +132,23 @@ Pulls the previous month's Bonusly recognition (given and received) for tracked 
 **Prerequisites:**
 - `OBSIDIAN_TEAMS_PATH` and `BONUSLY_API_TOKEN` in `~/.zshrc`
 - Person profile notes with `email` in YAML frontmatter
+
+### incident-kb
+
+Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources and generates trend/recurrence reports.
+
+```bash
+/incident-kb                          # full pipeline: fetch + generate
+/incident-kb --team TeamA             # associate with team
+/incident-kb --dry-run                # preview without writing files
+/incident-kb --force                  # re-fetch all data
+/incident-kb --report-only            # regenerate reports from cached data
+```
+
+**Prerequisites:**
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` in `~/.zshrc` (reused from other skills)
+- `RETRO_PARENT_PAGE_ID`, `INCIDENT_KB_OUTPUT_PATH` in `~/.zshrc`
+- Optional: `INC_PROJECT_KEY` (defaults to "INC"), `RETRO_TEMPLATE_PAGE_ID`
 
 ### feedback-perf
 

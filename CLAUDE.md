@@ -22,6 +22,13 @@ Each skill lives in its own directory with a `SKILL.md` file:
     generate.py         # Fetches bonuses, generates per-person markdown + sync log
   feedback-perf/
     SKILL.md
+  incident-kb/
+    SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
+    confluence_client.py # Confluence API client (load_env, auth, get page, get children, CQL search, adf_to_text, storage_to_text)
+    jira_client.py      # Jira API client (copied from root-cause-triage)
+    setup.py            # Validates env, tests Jira + Confluence API connectivity
+    fetch.py            # Crawls Confluence retros + Jira INC epics, cross-references, saves to /tmp/incident_kb/
+    generate.py         # Reads /tmp/ JSON, writes per-incident Obsidian markdown + trend/recurrence reports
   retro-summary/
     SKILL.md
     PROMPTS.md          # Synthesis agent prompts per retro template (rose-thorn-bud, wind-sun-anchor-reef)
@@ -104,9 +111,9 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `OBSIDIAN_VAULT_PATH` | retro-summary |
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
-| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
-| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
-| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
 | `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse |
 | `GITLAB_URL` | sprint-metrics, sprint-pulse |
 | `GITLAB_TOKEN` | sprint-metrics, sprint-pulse |
@@ -118,3 +125,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `SUPPORT_BOARD_ID` | sprint-pulse |
 | `SUPPORT_TEAM_LABEL` | sprint-pulse |
 | `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse |
+| `RETRO_PARENT_PAGE_ID` | incident-kb |
+| `RETRO_TEMPLATE_PAGE_ID` | incident-kb |
+| `INC_PROJECT_KEY` | incident-kb |
+| `INCIDENT_KB_OUTPUT_PATH` | incident-kb |
