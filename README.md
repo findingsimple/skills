@@ -135,7 +135,7 @@ Pulls the previous month's Bonusly recognition (given and received) for tracked 
 
 ### incident-kb
 
-Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources and generates trend/recurrence reports.
+Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources, writes date-sorted per-incident files (`YYYY-MM-DD — INC-KEY — Title.md`), routes test incidents to a `_test/` subdirectory, and generates trend/recurrence reports.
 
 ```bash
 /incident-kb                          # full pipeline: fetch + generate
