@@ -193,7 +193,7 @@ Generate the output in this format:
 {If deploy_count is 0: replace frequency line with "- **Deployment frequency:** no deployments yet this sprint — Low"}
 {If dora data is missing (sprint hasn't started): omit the DORA Snapshot section entirely}
 
-> **Note:** Both metrics cover all team MRs merged to the default branch (not just sprint-linked MRs). Deployment frequency is total deploy count / elapsed sprint days (not full sprint duration). Lead time scope differs from `/sprint-metrics` which uses sprint-linked MRs only.
+> **Note:** Both metrics cover all team MRs merged to the default branch (not just sprint-linked MRs). Deployment frequency is total deploy count / elapsed sprint days (not full sprint duration) — this uses MRs merged as a proxy for deployments, which may overcount if deploys are batched or gated. Lead time scope differs from `/sprint-metrics` which uses sprint-linked MRs only.
 
 ## Alerts
 

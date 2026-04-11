@@ -595,6 +595,8 @@ def main():
         lines.append("| DORA Rating | **%s** |" % (dora_data["lead_time_rating"] or "N/A"))
         lines.append("")
         lines.append("> **DORA Ratings:** Elite (deploy on-demand, lead time < 1d) · High (daily-weekly, < 1wk) · Medium (weekly-monthly, < 1mo) · Low (monthly+, 1mo+)")
+        lines.append(">")
+        lines.append("> Deployment frequency uses MRs merged to the default branch as a proxy for deployments. This is a common approximation but may overcount if deploys are batched or gated rather than triggered on every merge.")
         lines.append("")
 
     # Timing metrics
