@@ -121,8 +121,9 @@ def main():
         "inc_epic_count": len(epics),
     }
     setup_path = "/tmp/incident_kb_setup.json"
-    with open(setup_path, "w") as f:
+    with open(setup_path + ".tmp", "w") as f:
         json.dump(setup_data, f, indent=2)
+    os.replace(setup_path + ".tmp", setup_path)
     print("\nSetup saved to %s" % setup_path)
     print("=" * 50)
 
