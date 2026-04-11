@@ -120,8 +120,9 @@ def main():
         "teams": teams,
         "sprints": {k: v[:10] for k, v in all_sprints.items()},
     }
-    with open("/tmp/sprint_setup.json", "w") as f:
+    with open("/tmp/sprint_setup.json.tmp", "w") as f:
         json.dump(setup_data, f, indent=2)
+    os.replace("/tmp/sprint_setup.json.tmp", "/tmp/sprint_setup.json")
     print("\nSetup data saved to /tmp/sprint_setup.json")
 
 

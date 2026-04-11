@@ -2,6 +2,7 @@
 """Sprint pulse analyzer: runs deterministic alert rules on fetched sprint data."""
 
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -296,8 +297,9 @@ def main():
         "summary": data.get("summary", {}),
     }
 
-    with open("/tmp/sprint_pulse_alerts.json", "w") as f:
+    with open("/tmp/sprint_pulse_alerts.json.tmp", "w") as f:
         json.dump(alerts, f, indent=2, default=str)
+    os.replace("/tmp/sprint_pulse_alerts.json.tmp", "/tmp/sprint_pulse_alerts.json")
 
     # Write pre-filtered comment data for the outstanding questions sub-agent.
     # Only includes issues/tickets that have comments or MR notes, stripping
@@ -330,8 +332,9 @@ def main():
                 "status": ticket.get("status", ""),
                 "comments": ticket.get("comments", []),
             })
-    with open("/tmp/sprint_pulse_comments.json", "w") as f:
+    with open("/tmp/sprint_pulse_comments.json.tmp", "w") as f:
         json.dump(comment_items, f, indent=2, default=str)
+    os.replace("/tmp/sprint_pulse_comments.json.tmp", "/tmp/sprint_pulse_comments.json")
 
     # Print summary
     stale_count = len(stale_alerts)

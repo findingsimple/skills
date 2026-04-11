@@ -622,8 +622,9 @@ def main():
         ))
 
     # Write JSON output — used by build_prompts.py and report.py
-    with open("/tmp/triage_analysis.json", "w") as f:
+    with open("/tmp/triage_analysis.json.tmp", "w") as f:
         json.dump(results, f, indent=2)
+    os.replace("/tmp/triage_analysis.json.tmp", "/tmp/triage_analysis.json")
     print("\nAnalysis saved to /tmp/triage_analysis.json", file=sys.stderr)
 
 

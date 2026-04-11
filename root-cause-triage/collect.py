@@ -316,11 +316,12 @@ def main():
 
     # Step 2: Save raw issue list
     if not args.dry_run:
-        os.makedirs(COLLECT_DIR, exist_ok=True)
-        with open("/tmp/triage_collect_issues.json", "w") as f:
+        os.makedirs(COLLECT_DIR, mode=0o700, exist_ok=True)
+        with open("/tmp/triage_collect_issues.json.tmp", "w") as f:
             json.dump([{"key": i.get("key", i.get("fields", {}).get("key", "")),
                         "summary": i.get("fields", {}).get("summary", "")}
                        for i in raw_issues], f, indent=2)
+        os.replace("/tmp/triage_collect_issues.json.tmp", "/tmp/triage_collect_issues.json")
 
     # Step 3: Process each issue
     issues_data = []
@@ -359,8 +360,10 @@ def main():
             processed = process_issue(base_url, auth, raw_issue, status_column_map)
             issues_data.append(processed)
 
-            with open(json_path, "w") as f:
+            tmp_path = json_path + ".tmp"
+            with open(tmp_path, "w") as f:
                 json.dump(processed, f, indent=2)
+            os.replace(tmp_path, json_path)
         except Exception as e:
             print("  ERROR processing %s: %s" % (key, e), file=sys.stderr)
             errors += 1

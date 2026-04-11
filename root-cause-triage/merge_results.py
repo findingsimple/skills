@@ -169,7 +169,7 @@ def merge_post_enrich(issues_by_key, post_results):
 
 def save_duplicates(dup_results):
     """Save A2c duplicate clusters to /tmp/triage_duplicates/clusters.json."""
-    os.makedirs(DUPLICATES_DIR, exist_ok=True)
+    os.makedirs(DUPLICATES_DIR, mode=0o700, exist_ok=True)
 
     if isinstance(dup_results, dict):
         # Single batch — the results file contains the clusters directly
@@ -181,8 +181,10 @@ def save_duplicates(dup_results):
         return 0
 
     output_path = os.path.join(DUPLICATES_DIR, "clusters.json")
-    with open(output_path, "w") as f:
+    tmp_path = output_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(clusters, f, indent=2)
+    os.replace(tmp_path, output_path)
 
     dup_count = sum(1 for c in clusters if c.get("type") == "duplicate")
     rel_count = sum(1 for c in clusters if c.get("type") == "related")
@@ -289,8 +291,10 @@ def main():
         print("  No results found")
 
     # Save enriched analysis
-    with open(ENRICHED_PATH, "w") as f:
+    tmp_path = ENRICHED_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(issues, f, indent=2)
+    os.replace(tmp_path, ENRICHED_PATH)
 
     # Print summary
     raw_good = sum(1 for i in issues if i.get("quality") == "good")

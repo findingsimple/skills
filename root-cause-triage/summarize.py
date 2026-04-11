@@ -68,9 +68,10 @@ def parse_args():
 def sanitize_filename(s, max_len=80):
     """Sanitize a string for use in filenames."""
     s = re.sub(r'[/\\:*?"<>|]', '-', s)
+    s = s.lstrip(".")
     if len(s) > max_len:
         s = s[:max_len].rstrip()
-    return s
+    return s or "Untitled"
 
 
 def is_section_header(line):

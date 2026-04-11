@@ -198,7 +198,7 @@ def format_raw_issue(iss):
 
 def build_raw_quality(issues, batch_size):
     out_dir = os.path.join(PROMPT_BASE, "raw-quality")
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(out_dir, mode=0o700, exist_ok=True)
 
     history = load_history()
     history_section = build_history_section(history)
@@ -227,8 +227,11 @@ def build_raw_quality(issues, batch_size):
         })
 
     manifest = {"type": "raw-quality", "batch_count": len(batches), "batches": batches}
-    with open(os.path.join(out_dir, "batches.json"), "w") as f:
+    manifest_path = os.path.join(out_dir, "batches.json")
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    os.replace(tmp_path, manifest_path)
 
     return manifest
 
@@ -335,7 +338,7 @@ def format_post_enrich_issue(iss, enrichments, autofills):
 
 def build_post_enrich_quality(issues, batch_size):
     out_dir = os.path.join(PROMPT_BASE, "post-enrich-quality")
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(out_dir, mode=0o700, exist_ok=True)
 
     enrichments = load_enrichments()
     autofills = load_autofills()
@@ -364,8 +367,11 @@ def build_post_enrich_quality(issues, batch_size):
         })
 
     manifest = {"type": "post-enrich-quality", "batch_count": len(batches), "batches": batches}
-    with open(os.path.join(out_dir, "batches.json"), "w") as f:
+    manifest_path = os.path.join(out_dir, "batches.json")
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    os.replace(tmp_path, manifest_path)
 
     return manifest
 
@@ -419,7 +425,7 @@ Respond with a JSON array of clusters:
 
 def build_duplicates(issues):
     out_dir = os.path.join(PROMPT_BASE, "duplicates")
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(out_dir, mode=0o700, exist_ok=True)
 
     enrichments = load_enrichments()
     autofills = load_autofills()
@@ -461,8 +467,11 @@ def build_duplicates(issues):
             "issue_count": len(issues),
         }],
     }
-    with open(os.path.join(out_dir, "batches.json"), "w") as f:
+    manifest_path = os.path.join(out_dir, "batches.json")
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    os.replace(tmp_path, manifest_path)
 
     return manifest
 

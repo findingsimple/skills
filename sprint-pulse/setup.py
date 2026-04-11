@@ -192,8 +192,9 @@ def main():
         "board_configs": board_configs,
         "support_board_config": support_board_config,
     }
-    with open("/tmp/sprint_pulse_setup.json", "w") as f:
+    with open("/tmp/sprint_pulse_setup.json.tmp", "w") as f:
         json.dump(setup_data, f, indent=2, default=str)
+    os.replace("/tmp/sprint_pulse_setup.json.tmp", "/tmp/sprint_pulse_setup.json")
     print("\nSetup data saved to /tmp/sprint_pulse_setup.json")
 
 

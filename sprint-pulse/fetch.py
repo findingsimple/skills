@@ -2,6 +2,7 @@
 """Sprint pulse data fetcher: gathers sprint issues, changelogs, comments, MRs, and support tickets."""
 
 import json
+import os
 import re
 import sys
 import argparse
@@ -622,8 +623,9 @@ def main():
         "dora": dora,
     }
 
-    with open("/tmp/sprint_pulse_data.json", "w") as f:
+    with open("/tmp/sprint_pulse_data.json.tmp", "w") as f:
         json.dump(output, f, indent=2, default=str)
+    os.replace("/tmp/sprint_pulse_data.json.tmp", "/tmp/sprint_pulse_data.json")
 
     print("\nData saved to /tmp/sprint_pulse_data.json", file=sys.stderr)
     print("FETCH_COMPLETE|issues:%d|active:%d|mrs:%d|support:%d|dora_deploys:%d" % (

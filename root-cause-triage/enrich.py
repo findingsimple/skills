@@ -120,7 +120,7 @@ def cmd_prepare(args):
         return
 
     # Create batches
-    os.makedirs(ENRICH_DIR, exist_ok=True)
+    os.makedirs(ENRICH_DIR, mode=0o700, exist_ok=True)
     batch_size = args.batch_size
     batches = []
     for i in range(0, len(blocks), batch_size):
@@ -138,8 +138,10 @@ def cmd_prepare(args):
 
     # Write batch index
     index_path = os.path.join(ENRICH_DIR, "batches.json")
-    with open(index_path, "w") as f:
+    tmp_path = index_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(batches, f, indent=2)
+    os.replace(tmp_path, index_path)
 
     print("--- Prepare Complete ---")
     print("Issues to enrich: %d" % len(blocks))
