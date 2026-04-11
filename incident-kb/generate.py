@@ -9,6 +9,58 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
+MONTH_MAP = {
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+    "may": "05", "jun": "06", "jul": "07", "aug": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+    "january": "01", "february": "02", "march": "03", "april": "04",
+    "june": "06", "july": "07", "august": "08",
+    "september": "09", "october": "10", "november": "11", "december": "12",
+}
+
+# Build month alternation for regex patterns (exclude "may" — too common as English word)
+_SAFE_MONTHS = "|".join(k for k in MONTH_MAP if len(k) == 3 and k != "may")
+
+# Patterns ordered from most specific to least specific
+_DATE_PATTERNS = [
+    # YYYY-MM-DD (standard ISO — most titles)
+    (re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})"),
+     lambda m: (m.group(1), m.group(2), m.group(3))),
+    # DD Mon YYYY  e.g. "28 Feb 2025" (word boundary before day to avoid matching trailing digits)
+    (re.compile(r"\b(\d{1,2})\s+(" + _SAFE_MONTHS + r"|may)\s+(\d{4})\b", re.IGNORECASE),
+     lambda m: (m.group(3), MONTH_MAP[m.group(2).lower()], m.group(1))),
+    # Mon YYYY  e.g. "Feb 2025" (day defaults to 01; excludes "may" to avoid "this may 2025")
+    (re.compile(r"\b(" + _SAFE_MONTHS + r")\s+(\d{4})\b", re.IGNORECASE),
+     lambda m: (m.group(2), MONTH_MAP[m.group(1).lower()], "1")),
+]
+
+_VALID_YEAR_RANGE = (2000, 2099)
+
+
+def extract_date_from_title(title):
+    """Extract the earliest incident date from a free-form title.
+
+    Returns YYYY-MM-DD string or empty string if no date found.
+    Tries ISO dates first, then natural-language month patterns.
+    For date ranges, uses the start date. Rejects years outside 2000-2099.
+    """
+    if not title:
+        return ""
+    for pattern, extractor in _DATE_PATTERNS:
+        match = pattern.search(title)
+        if match:
+            year, month, day = extractor(match)
+            try:
+                y = int(year)
+                if y < _VALID_YEAR_RANGE[0] or y > _VALID_YEAR_RANGE[1]:
+                    continue
+                dt = datetime(y, int(month), int(day))
+                return dt.strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+    return ""
+
+
 CACHE_DIR = "/tmp/incident_kb"
 CONFLUENCE_DIR = os.path.join(CACHE_DIR, "confluence")
 JIRA_DIR = os.path.join(CACHE_DIR, "jira")
@@ -80,15 +132,16 @@ def build_incident(match, confluence_pages, jira_epics, base_url):
     retro = confluence_pages.get(retro_page_id, {})
     epic = jira_epics.get(epic_key, {})
 
-    # Determine date from epic created or retro created
-    date = ""
-    if epic.get("created"):
-        date = epic["created"][:10]
-    elif retro.get("created_at"):
-        date = retro["created_at"][:10]
-
     # Title: prefer epic summary, fall back to retro title
     title = epic.get("summary", "") or retro.get("title", "") or "Unknown Incident"
+
+    # Determine date: prefer date extracted from title, fall back to created timestamps
+    date = extract_date_from_title(title) or extract_date_from_title(retro.get("title", ""))
+    if not date:
+        if epic.get("created"):
+            date = epic["created"][:10]
+        elif retro.get("created_at"):
+            date = retro["created_at"][:10]
 
     # Sections from retro
     sections = retro.get("sections", {})
@@ -132,15 +185,16 @@ def build_orphan_retro_incident(orphan, confluence_pages, base_url):
     page_id = orphan.get("retro_page_id", "")
     retro = confluence_pages.get(page_id, {})
 
-    date = ""
-    if retro.get("created_at"):
+    title = retro.get("title", orphan.get("retro_title", "")) or "Unknown"
+    date = extract_date_from_title(title)
+    if not date and retro.get("created_at"):
         date = retro["created_at"][:10]
 
     retro_url = "%s/wiki/pages/%s" % (base_url, page_id) if page_id else ""
 
     return {
         "inc_key": "",
-        "title": retro.get("title", orphan.get("retro_title", "Unknown")),
+        "title": title,
         "date": date,
         "severity": "",
         "status": "",
@@ -167,13 +221,14 @@ def build_orphan_epic_incident(orphan, jira_epics, base_url):
     key = orphan.get("epic_key", "")
     epic = jira_epics.get(key, {})
 
-    date = ""
-    if epic.get("created"):
+    title = epic.get("summary", orphan.get("epic_summary", "Unknown"))
+    date = extract_date_from_title(title)
+    if not date and epic.get("created"):
         date = epic["created"][:10]
 
     return {
         "inc_key": key,
-        "title": epic.get("summary", orphan.get("epic_summary", "Unknown")),
+        "title": title,
         "date": date,
         "severity": epic.get("severity", ""),
         "status": epic.get("status", ""),
@@ -363,24 +418,39 @@ def write_file(path, content, dry_run):
         f.write(content)
 
 
+def is_test_incident(incident):
+    """Detect test/dummy incidents by title keywords."""
+    title = (incident.get("title", "") or "").lower()
+    test_patterns = ["test incident", "test only", "test retro", "test not real",
+                     "test markdown", "test templating", "test rootly", "ignore this"]
+    return any(p in title for p in test_patterns)
+
+
 def generate_incident_files(incidents, output_path, dry_run, force):
     """Generate per-incident markdown files."""
     print("\n--- Generating incident files ---")
     written = 0
     skipped = 0
+    test_count = 0
 
     for incident in incidents:
         inc_key = incident["inc_key"]
         title = incident["title"]
+        date = incident.get("date", "") or "0000-00-00"
 
+        # Build date-first filename (INC key or retro page ID ensures uniqueness)
         if inc_key:
-            filename = "%s — %s.md" % (inc_key, sanitize_filename(title))
+            filename = "%s — %s — %s.md" % (date, inc_key, sanitize_filename(title))
         else:
-            # Orphan retro without INC key — use retro page ID
             page_id = incident.get("retro_page_id", "unknown")
-            filename = "Retro %s — %s.md" % (page_id, sanitize_filename(title))
+            filename = "%s — %s — %s.md" % (date, page_id, sanitize_filename(title))
 
-        filepath = os.path.join(output_path, filename)
+        # Route test incidents to _test/ subdirectory
+        if is_test_incident(incident):
+            filepath = os.path.join(output_path, "_test", filename)
+            test_count += 1
+        else:
+            filepath = os.path.join(output_path, filename)
 
         if not force and os.path.exists(filepath):
             skipped += 1
@@ -390,7 +460,7 @@ def generate_incident_files(incidents, output_path, dry_run, force):
         write_file(filepath, content, dry_run)
         written += 1
 
-    print("Written: %d, Skipped (existing): %d" % (written, skipped))
+    print("Written: %d, Skipped (existing): %d, Test: %d" % (written, skipped, test_count))
     return written
 
 
