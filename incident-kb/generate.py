@@ -77,8 +77,13 @@ def parse_args():
     return parser.parse_args()
 
 
+_LEADING_DATE_RE = re.compile(
+    r"^(?:Incident\s*:\s*)?\d{4}-\d{1,2}-\d{1,2}(?:\s+to\s+\d{4}-\d{1,2}-\d{1,2}|\s+to\s+\d{1,2})?(?:\s*[-:]\s*|\s+)")
+
+
 def sanitize_filename(s, max_len=80):
-    """Sanitize a string for use as a filename."""
+    """Sanitize a string for use as a filename. Strips leading dates to avoid duplication."""
+    s = _LEADING_DATE_RE.sub("", s)
     s = re.sub(r'[<>:"/\\|?*]', "", s)
     s = re.sub(r"\s+", " ", s).strip()
     s = s.lstrip(".")
