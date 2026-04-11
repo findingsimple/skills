@@ -28,7 +28,7 @@ This skill uses **two Python scripts** (`setup.py` and `generate.py`) in the ski
 - **Review Turnaround** — MR created → first non-author response (comment or approval, whichever is earlier) (average + median)
 - **Time to Approval** — MR created → first approval (average + median)
 - **Cycle Time** — first commit on branch → MR merged (average + median)
-- **Deployment Frequency (DORA)** — days with at least one MR merged to default branch by team members, as a fraction of sprint days, with DORA rating
+- **Deployment Frequency (DORA)** — total MRs merged to default branch by team members per day (deploy count / sprint days), with DORA rating. Also reports days-with-deploys as a spread indicator
 - **Lead Time for Changes (DORA)** — first commit to merge for sprint-linked MRs (median + P90), with DORA rating
 
 ### How MRs are linked to sprint issues

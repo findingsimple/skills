@@ -218,7 +218,7 @@ Generate engineering metrics from GitLab merge requests linked to Jira sprint is
 /sprint-metrics --team TeamA --dry-run    # preview without writing
 ```
 
-**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR. Also includes DORA metrics: Deployment Frequency (days with at least one MR merged to default branch by team members, as a fraction of sprint days) and Lead Time for Changes (first commit to merge, median + P90), with DORA rating classifications (Elite/High/Medium/Low).
+**Metrics:** Time to Merge, Review Turnaround, Time to Approval, Cycle Time — aggregated (avg/median), per-author, and per-MR. Also includes DORA metrics: Deployment Frequency (total MRs merged to default branch by team members, divided by sprint days) and Lead Time for Changes (first commit to merge, median + P90), with DORA rating classifications (Elite/High/Medium/Low).
 
 **Prerequisites:**
 - `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and GitLab credentials in `~/.zshrc`

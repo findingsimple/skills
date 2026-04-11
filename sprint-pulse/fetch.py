@@ -258,7 +258,7 @@ def fetch_dora_snapshot(gitlab_url, gitlab_token, gitlab_project_id,
         if merged_at:
             deploy_dates.add(merged_at[:10])
     days_with_deploys = len(deploy_dates)
-    deploys_per_day = days_with_deploys / elapsed_days
+    deploys_per_day = deploy_count / elapsed_days
 
     # Lead time: first authored commit to merge for each team MR
     print("Fetching commits for %d team MRs (lead time)..." % len(team_merged), file=sys.stderr)

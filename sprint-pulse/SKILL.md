@@ -185,7 +185,7 @@ Generate the output in this format:
 - To do: {todo_count} | In progress: {in_progress_count} | In review: {in_review_count} | Done: {completed}/{total}
 
 ## DORA Snapshot
-- **Deployment frequency:** {days_with_deploys}/{elapsed_days} days with deploys ({deploys_per_day}/day) — {deploy_rating}
+- **Deployment frequency:** {deploys_per_day}/day ({deploy_count} merges over {elapsed_days} days, {days_with_deploys} days with deploys) — {deploy_rating}
 - **Lead time for changes:** {lead_time_median_display} median, {lead_time_p90_display} p90 — {lead_time_rating}
 - Scope: {deploy_count} merges to `{default_branch}` by {team_author_count} team members
 
@@ -193,7 +193,7 @@ Generate the output in this format:
 {If deploy_count is 0: replace frequency line with "- **Deployment frequency:** no deployments yet this sprint — Low"}
 {If dora data is missing (sprint hasn't started): omit the DORA Snapshot section entirely}
 
-> **Note:** Both metrics cover all team MRs merged to the default branch (not just sprint-linked MRs). Deployment frequency uses elapsed sprint days as denominator (not full sprint duration). Lead time scope differs from `/sprint-metrics` which uses sprint-linked MRs only.
+> **Note:** Both metrics cover all team MRs merged to the default branch (not just sprint-linked MRs). Deployment frequency is total deploy count / elapsed sprint days (not full sprint duration). Lead time scope differs from `/sprint-metrics` which uses sprint-linked MRs only.
 
 ## Alerts
 

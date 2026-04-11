@@ -485,14 +485,14 @@ def main():
         end_dt_dora = datetime.strptime(end_date[:10], "%Y-%m-%d")
         sprint_days = max((end_dt_dora - start_dt_dora).days, 1)
         deploy_count = len(team_merged)
-        # Count distinct days with at least one deploy (measures regularity, not volume)
+        # Count distinct days with at least one deploy (spread/regularity indicator)
         deploy_dates = set()
         for m in team_merged:
             merged_at = m.get("merged_at", "")
             if merged_at:
                 deploy_dates.add(merged_at[:10])
         days_with_deploys = len(deploy_dates)
-        deploys_per_day = days_with_deploys / sprint_days
+        deploys_per_day = deploy_count / sprint_days
 
         lead_time_med = median(cycle_values)
         lead_time_p90 = percentile(cycle_values, 90)
@@ -573,7 +573,7 @@ def main():
     if dora_data:
         lines.append("## DORA Metrics")
         lines.append("")
-        lines.append("> **Deployment Frequency** measures how many days had at least one MR merged to `%s` by team members during the sprint window, reflecting deploy regularity rather than volume. MR count includes all merges (infra, chores, hotfixes) — not just sprint-linked MRs." % dora_data["default_branch"])
+        lines.append("> **Deployment Frequency** measures total MRs merged to `%s` by team members per day during the sprint window. MR count includes all merges (infra, chores, hotfixes) — not just sprint-linked MRs. Days-with-deploys shows deployment spread/regularity." % dora_data["default_branch"])
         lines.append(">")
         lines.append("> **Lead Time for Changes** measures first authored commit to merge for sprint-linked MRs only.")
         lines.append("")
