@@ -255,12 +255,49 @@ def build_orphan_epic_incident(orphan, jira_epics, base_url):
     }
 
 
+def strip_template_description(text):
+    """Strip retro template description prompts from section content.
+
+    Confluence retro templates store sections as "Description text | Actual content |".
+    This strips the leading description and trailing pipe delimiters, returning only
+    the actual incident-specific content. Multi-row key-value tables (like postmortem
+    summary where most lines have pipes) are reformatted as markdown tables.
+    """
+    if not text or "|" not in text:
+        return text
+
+    lines = text.strip().split("\n")
+    non_empty = [l for l in lines if l.strip()]
+    lines_with_pipe = sum(1 for l in non_empty if "|" in l)
+
+    # Multi-row key-value table: majority of lines have pipes (e.g. postmortem summary)
+    if len(non_empty) >= 3 and lines_with_pipe > len(non_empty) * 0.6:
+        rows = []
+        for line in non_empty:
+            if "|" not in line:
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            parts = [p for p in parts if p]
+            if len(parts) >= 2:
+                rows.append("| **%s** | %s |" % (parts[0], parts[1]))
+            elif len(parts) == 1:
+                rows.append("| **%s** | |" % parts[0])
+        if rows:
+            return "| | |\n|---|---|\n" + "\n".join(rows)
+
+    # Single description | content pattern: strip the template description
+    _, _, content = text.partition("|")
+    content = content.strip().rstrip("|").strip()
+    return content
+
+
 def format_incident_markdown(incident):
     """Format a single incident as Obsidian markdown with YAML frontmatter."""
     inc_key = incident["inc_key"]
     title = incident["title"]
     date = incident["date"]
-    sections = incident["sections"]
+    # Strip template description prompts from all sections up front
+    sections = {k: strip_template_description(v) for k, v in incident["sections"].items()}
 
     # Build frontmatter
     fm_lines = ["---"]
