@@ -163,6 +163,7 @@ def main():
     log_lines.append("---")
     log_lines.append("source: bonusly")
     log_lines.append("type: sync-log")
+    log_lines.append("tags: [log]")
     log_lines.append('period: "%s"' % period)
     log_lines.append('synced_at: "%s"' % now_utc)
     log_lines.append("---")
