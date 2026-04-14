@@ -89,6 +89,7 @@ python3 ~/.claude/skills/incident-kb/generate.py [--team TEAM] [--dry-run] [--fo
 This reads the cached JSON and writes:
 - Per-incident markdown files to `{INCIDENT_KB_OUTPUT_PATH}/` named `YYYY-MM-DD — INC-KEY — Title.md` (dates extracted from titles, falling back to created timestamps)
 - Test/dummy incidents (titles containing "test incident", "test only", etc.) routed to `_test/` subdirectory
+- `_Index.md` — all incidents grouped by year with severity tags
 - `_Trend Report.md` — incident frequency, severity distribution, service heatmap
 - `_Recurrence Report.md` — recurring labels, keyword themes, missing retros
 
