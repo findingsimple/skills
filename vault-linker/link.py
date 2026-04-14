@@ -653,7 +653,7 @@ def generate_plans_index(vault_base, dry_run):
                         break
         except (OSError, UnicodeDecodeError):
             pass
-        lines.append("| %s | [[%s\\|%s]] |" % (date, name, title))
+        lines.append("| %s | [%s](<%s.md>) |" % (date, title, name))
 
     lines.append("")
     content = "\n".join(lines)
