@@ -48,11 +48,15 @@ def parse_summary_file(path):
     # Parse YAML frontmatter
     frontmatter = {}
     if content.startswith("---"):
-        end = content.index("---", 3)
+        end = content.find("---", 3)
+        if end == -1:
+            return {}, []
         for line in content[3:end].strip().splitlines():
             if ": " in line:
                 key, val = line.split(": ", 1)
-                frontmatter[key.strip()] = val.strip().strip('"')
+                # Strip quotes and wiki link brackets (team: "[[COPS]]" → COPS)
+                val = val.strip().strip('"').replace("[[", "").replace("]]", "")
+                frontmatter[key.strip()] = val
 
     # Extract issue keys from markdown links like [PROJ-123](...)
     issue_keys = []
