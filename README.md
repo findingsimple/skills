@@ -136,7 +136,7 @@ Pulls the previous month's Bonusly recognition (given and received) for tracked 
 
 ### incident-kb
 
-Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources, writes date-sorted per-incident files (`YYYY-MM-DD — INC-KEY — Title.md`), routes test incidents to a `_test/` subdirectory, and generates trend/recurrence reports.
+Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources, writes date-sorted per-incident files (`YYYY-MM-DD — INC-KEY — Title.md`), routes test incidents to a `_test/` subdirectory, and generates trend/recurrence reports. Per-incident files include `tags: [incident, sev/{level}]` frontmatter for Obsidian graph clustering. Slack channel references in retro content are wrapped in backticks to prevent false tag parsing.
 
 ```bash
 /incident-kb                          # full pipeline: fetch + generate
@@ -193,7 +193,7 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 Two modes for working with root cause tickets on a Jira board:
 
-**Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, then uses agents to produce quality linked issue summaries and a root cause analysis synthesis:
+**Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, then uses agents to produce quality linked issue summaries and a root cause analysis synthesis. Per-issue files include `tags: [root-cause]` frontmatter (plus classification tag after enrichment) for Obsidian graph clustering:
 ```bash
 /root-cause-triage collect                    # full pipeline: fetch, summarize, enrich
 /root-cause-triage collect --issue PROJ-1234  # collect a single issue
