@@ -539,6 +539,77 @@ def add_person_backlink(filepath, person_name, dry_run):
     return True
 
 
+def link_frontmatter_fields(filepath, team_hubs, person_links, dry_run):
+    """Add wiki links to team: and participants: fields in YAML frontmatter.
+
+    team: COPS → team: "[[COPS]]"
+    participants: [Alice, Bob] → participants: ["[[Alice]]", "[[Bob]]"]
+
+    team_hubs: set of team names that have hub pages.
+    person_links: dict of lowercase name -> name (for participant matching).
+    Returns (changed, count) like process_file.
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+    except (UnicodeDecodeError, OSError):
+        return False, 0
+
+    if not content.startswith("---\n"):
+        return False, 0
+
+    end = content.find("\n---\n", 4)
+    if end == -1:
+        return False, 0
+
+    frontmatter = content[4:end]
+    new_frontmatter = frontmatter
+    count = 0
+
+    # Link team: field
+    team_match = re.search(r'^team:\s*"?([^"\n]+)"?\s*$', new_frontmatter, re.MULTILINE)
+    if team_match:
+        team_name = team_match.group(1).strip()
+        # Skip if already a wiki link
+        if "[[" not in team_name and team_name in team_hubs:
+            old_line = team_match.group(0)
+            new_line = 'team: "[[%s]]"' % team_name
+            new_frontmatter = new_frontmatter.replace(old_line, new_line, 1)
+            count += 1
+
+    # Link participants: field
+    parts_match = re.search(r'^participants:\s*\[([^\]]+)\]\s*$', new_frontmatter, re.MULTILINE)
+    if parts_match:
+        raw_list = parts_match.group(1)
+        # Skip if already contains wiki links
+        if "[[" not in raw_list:
+            names = [n.strip() for n in raw_list.split(",")]
+            linked_names = []
+            for name in names:
+                if name.lower() in person_links:
+                    linked_names.append('"[[%s]]"' % name)
+                    count += 1
+                else:
+                    linked_names.append(name)
+            if count > 0:
+                new_list = "participants: [%s]" % ", ".join(linked_names)
+                old_list = parts_match.group(0)
+                new_frontmatter = new_frontmatter.replace(old_list, new_list, 1)
+
+    if count == 0:
+        return False, 0
+
+    new_content = "---\n" + new_frontmatter + content[end:]
+
+    if not dry_run:
+        tmp_path = filepath + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp_path, filepath)
+
+    return True, count
+
+
 def generate_plans_index(vault_base, dry_run):
     """Generate Plans/_Index.md listing all plans reverse-chronologically."""
     plans_dir = os.path.join(vault_base, "Plans")
@@ -669,6 +740,51 @@ def main():
 
     if backlinks_added > 0:
         print("\nPerson backlinks added: %d" % backlinks_added)
+
+    # Link frontmatter fields (team:, participants:) across all team files
+    frontmatter_links = 0
+    if args.scope == "all":
+        # Build set of team names that have hub pages
+        team_hubs = set()
+        for team_dir in _list_team_dirs(args.teams_path):
+            team_hubs.add(os.path.basename(team_dir))
+
+        # Build person lookup for participant linking
+        person_lookup = {n.lower(): n for n in person_names}
+
+        # Collect all files under Teams that could have team:/participants: frontmatter
+        fm_targets = []
+        for team_dir in _list_team_dirs(args.teams_path):
+            # Person profiles
+            for person_dir in _list_subdirs(team_dir):
+                profile = os.path.join(person_dir, "%s.md" % os.path.basename(person_dir))
+                if os.path.isfile(profile):
+                    fm_targets.append(profile)
+            # Retros
+            retro_dir = os.path.join(team_dir, "Retros")
+            if os.path.isdir(retro_dir):
+                for f in os.listdir(retro_dir):
+                    if f.endswith(".md") and not f.startswith("_"):
+                        fm_targets.append(os.path.join(retro_dir, f))
+            # Sprint files (summaries, metrics, pulses in subdirs)
+            sprints_dir = os.path.join(team_dir, "Sprints")
+            if os.path.isdir(sprints_dir):
+                for sd in os.listdir(sprints_dir):
+                    sd_path = os.path.join(sprints_dir, sd)
+                    if os.path.isdir(sd_path):
+                        for f in os.listdir(sd_path):
+                            if f.endswith(".md"):
+                                fm_targets.append(os.path.join(sd_path, f))
+
+        for fpath in sorted(set(fm_targets)):
+            changed, count = link_frontmatter_fields(fpath, team_hubs, person_lookup, args.dry_run)
+            if changed:
+                frontmatter_links += count
+                rel = os.path.relpath(fpath, args.vault_base)
+                print("  %s: +%d frontmatter links" % (rel, count))
+
+    if frontmatter_links > 0:
+        print("\nFrontmatter links added: %d" % frontmatter_links)
 
     # Generate index and hub pages
     indexes_created = []
