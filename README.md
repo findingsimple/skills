@@ -201,6 +201,7 @@ Two modes for working with root cause tickets on a Jira board:
 /root-cause-triage collect --dry-run          # preview without writing
 /root-cause-triage collect --force            # overwrite existing files
 /root-cause-triage collect --include-done     # include stale done items hidden by the board
+/root-cause-triage collect --index-only      # regenerate _Index.md from cache (no Jira fetch)
 ```
 
 **Analyze** — run structural and semantic analysis on collected data (informational, no Jira mutations):

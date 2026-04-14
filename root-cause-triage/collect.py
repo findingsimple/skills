@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument("--include-done", action="store_true", help="Include Closed/Cancelled issues (excluded by default)")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without writing files")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files (default: skip)")
+    parser.add_argument("--index-only", action="store_true", help="Regenerate index from cached JSON (no Jira fetch)")
     return parser.parse_args()
 
 
@@ -310,6 +311,25 @@ def main():
     if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", parent_key):
         print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % parent_key)
         sys.exit(1)
+
+    # Fast path: regenerate index from cached per-issue JSON files
+    if args.index_only:
+        issues_data = []
+        if os.path.isdir(COLLECT_DIR):
+            for f in sorted(os.listdir(COLLECT_DIR)):
+                if not f.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(COLLECT_DIR, f)) as fh:
+                        issues_data.append(json.load(fh))
+                except Exception as e:
+                    print("WARNING: failed to read %s: %s" % (f, e), file=sys.stderr)
+        if not issues_data:
+            print("ERROR: No cached issue data in %s — run a full collect first" % COLLECT_DIR)
+            sys.exit(1)
+        index_path = write_index(issues_data, output_path, parent_key)
+        print("Index regenerated from %d cached issues: %s" % (len(issues_data), index_path))
+        return
 
     # Step 0: Build board column mapping
     board_id = int(env.get("TRIAGE_BOARD_ID", "0"))

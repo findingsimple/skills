@@ -2,7 +2,7 @@
 name: root-cause-triage
 description: Collects root cause ticket data to Obsidian knowledge base and analyzes for duplicates, quality, and completeness. Use when the user asks to collect root cause data, check for duplicate issues, or assess issue quality.
 disable-model-invocation: true
-argument-hint: "[collect|analyze] [--issue KEY] [--status STATUS] [--dry-run] [--force]"
+argument-hint: "[collect|analyze] [--issue KEY] [--status STATUS] [--dry-run] [--force] [--index-only]"
 ---
 
 # Root Cause Triage
@@ -69,10 +69,12 @@ Build a per-issue Obsidian knowledge base from Jira data. Four steps:
 ### Step C1 — Run collect.py
 
 ```bash
-python3 ~/.claude/skills/root-cause-triage/collect.py [--issue KEY] [--status STATUS] [--dry-run] [--force]
+python3 ~/.claude/skills/root-cause-triage/collect.py [--issue KEY] [--status STATUS] [--dry-run] [--force] [--index-only]
 ```
 
 Pass through any arguments from Step 1. If `collect.py` exits with a non-zero status, display the error and stop.
+
+If `--index-only` was specified, the script regenerates `_Index.md` from cached per-issue JSON in `/tmp/triage_collect/` without fetching from Jira. This is fast (sub-second) and useful for re-generating the index after link format changes.
 
 If `--dry-run` was specified, show the output and stop — do not proceed to summarization.
 
