@@ -173,6 +173,43 @@ def link_people_in_content(content, links, person_names, protected_ranges):
     return content, total
 
 
+def augment_jira_links_in_content(content, links, self_keys=None):
+    """Append wiki links to existing [KEY](url) markdown links when a vault page exists.
+
+    Transforms: [PDE-1234](https://...) → [PDE-1234](https://...) ([[page\\|PDE-1234]])
+    Skips keys already followed by a wiki link.
+    self_keys: set of lowercase keys to skip (prevents self-linking).
+    """
+    if self_keys is None:
+        self_keys = set()
+    total = 0
+
+    # Match [KEY](url) NOT already followed by ([[...]])
+    # The negative lookahead prevents double-augmenting
+    pattern = re.compile(
+        r"\[([A-Z]+-\d+)\]\(https?://[^)]+\)(?!\s*\(\[\[)"
+    )
+
+    result = []
+    last_end = 0
+    for m in pattern.finditer(content):
+        key = m.group(1)
+        if key.lower() in self_keys:
+            continue
+        wiki_link = links.get(key.lower())
+        if not wiki_link:
+            continue
+        result.append(content[last_end:m.end()])
+        result.append(" (%s)" % wiki_link)
+        total += 1
+        last_end = m.end()
+
+    if total == 0:
+        return content, 0
+    result.append(content[last_end:])
+    return "".join(result), total
+
+
 def link_jira_keys_in_content(content, links, protected_ranges, self_keys=None):
     """Replace bare Jira keys with wiki links to matching vault pages.
 
@@ -305,7 +342,15 @@ def process_file(filepath, links, person_names, dry_run):
     if c > 0:
         protected_ranges = find_protected_ranges(content)
 
-    # Link Jira keys
+    # Augment existing [KEY](url) markdown links with wiki links
+    content, c = augment_jira_links_in_content(content, links, self_keys)
+    total_changes += c
+
+    # Recompute protected ranges after augmentation
+    if c > 0:
+        protected_ranges = find_protected_ranges(content)
+
+    # Link bare Jira keys
     content, c = link_jira_keys_in_content(content, links, protected_ranges, self_keys)
     total_changes += c
 
@@ -382,6 +427,116 @@ def generate_sprint_timeline(team_dir, team_name, dry_run):
         os.replace(tmp_path, out_path)
 
     return out_path
+
+
+def generate_team_hub(team_dir, team_name, teams_path, dry_run):
+    """Generate a team hub page linking to members, sprint timeline, and retros."""
+    # Discover team members (subdirs with a .md profile inside)
+    members = []
+    for d in sorted(os.listdir(team_dir)):
+        full = os.path.join(team_dir, d)
+        if not os.path.isdir(full) or d in ("Retros", "Sprints"):
+            continue
+        profile = os.path.join(full, "%s.md" % d)
+        if os.path.isfile(profile):
+            members.append(d)
+
+    # Discover retros
+    retros = []
+    retro_dir = os.path.join(team_dir, "Retros")
+    if os.path.isdir(retro_dir):
+        for f in sorted(os.listdir(retro_dir), reverse=True):
+            if f.endswith(".md") and not f.startswith("_"):
+                retros.append(f[:-3])
+
+    # Check for sprint timeline
+    timeline_path = os.path.join(team_dir, "Sprints", "_Timeline.md")
+    has_timeline = os.path.isfile(timeline_path)
+
+    lines = [
+        "---",
+        "type: team-hub",
+        "team: %s" % team_name,
+        "generated: true",
+        "---",
+        "",
+        "# %s" % team_name,
+        "",
+        "## Team Members",
+        "",
+    ]
+
+    for name in members:
+        lines.append("- [[%s]]" % name)
+
+    lines.append("")
+
+    if has_timeline:
+        lines.append("## Sprints")
+        lines.append("")
+        lines.append("See [[_Timeline\\|Sprint Timeline]]")
+        lines.append("")
+
+    if retros:
+        lines.append("## Retros")
+        lines.append("")
+        for name in retros:
+            # Extract date from "Retro - YYYY-MM-DD"
+            date = name.replace("Retro - ", "") if name.startswith("Retro - ") else name
+            lines.append("- [[%s\\|%s]]" % (name, date))
+        lines.append("")
+
+    content = "\n".join(lines)
+    out_path = os.path.join(team_dir, "%s.md" % team_name)
+
+    if not dry_run:
+        tmp_path = out_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, out_path)
+
+    return out_path
+
+
+def add_person_backlink(filepath, person_name, dry_run):
+    """Add a [[Person]] wiki link to a file that lives in that person's directory.
+
+    For files with YAML frontmatter: adds a 'person' field with wiki link.
+    For files without frontmatter: prepends a link line at the top.
+    Returns True if the file was modified.
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+    except (UnicodeDecodeError, OSError):
+        return False
+
+    # Check for YAML frontmatter
+    if content.startswith("---\n"):
+        end = content.find("\n---\n", 4)
+        if end != -1:
+            frontmatter = content[4:end]
+            # Skip if person field already exists
+            if "\nperson:" in frontmatter or frontmatter.startswith("person:"):
+                return False
+            # Insert person field at end of frontmatter
+            new_content = content[:end] + "\nperson: \"[[%s]]\"" % person_name + content[end:]
+        else:
+            # Unclosed frontmatter — skip to avoid corruption
+            return False
+    else:
+        # No frontmatter — skip if bold person link already at top
+        if content.startswith("**[[%s]]**" % person_name):
+            return False
+        new_content = "**[[%s]]**\n\n" % person_name + content
+
+    if not dry_run:
+        tmp_path = filepath + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp_path, filepath)
+
+    return True
 
 
 def generate_plans_index(vault_base, dry_run):
@@ -494,12 +649,38 @@ def main():
     print("Files modified: %d" % changed_files)
     print("Links added: %d" % total_links_added)
 
-    # Generate index pages
+    # Add person backlinks to bonusly and review cycle files
+    backlinks_added = 0
+    if args.scope in ("all", "bonusly"):
+        for team_dir in _list_team_dirs(args.teams_path):
+            for person_dir in _list_subdirs(team_dir):
+                person_name = os.path.basename(person_dir)
+                fb_dir = os.path.join(person_dir, "Feedback")
+                if not os.path.isdir(fb_dir):
+                    continue
+                for f in os.listdir(fb_dir):
+                    if not f.endswith(".md"):
+                        continue
+                    fpath = os.path.join(fb_dir, f)
+                    if add_person_backlink(fpath, person_name, args.dry_run):
+                        backlinks_added += 1
+                        rel = os.path.relpath(fpath, args.vault_base)
+                        print("  %s: +backlink to [[%s]]" % (rel, person_name))
+
+    if backlinks_added > 0:
+        print("\nPerson backlinks added: %d" % backlinks_added)
+
+    # Generate index and hub pages
     indexes_created = []
 
     if args.scope == "all":
         for team_dir in _list_team_dirs(args.teams_path):
             team_name = os.path.basename(team_dir)
+
+            idx_path = generate_team_hub(team_dir, team_name, args.teams_path, args.dry_run)
+            if idx_path:
+                indexes_created.append(os.path.relpath(idx_path, args.vault_base))
+
             idx_path = generate_sprint_timeline(team_dir, team_name, args.dry_run)
             if idx_path:
                 indexes_created.append(os.path.relpath(idx_path, args.vault_base))

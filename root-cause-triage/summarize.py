@@ -15,21 +15,35 @@ ENV_KEYS = ["JIRA_BASE_URL", "TRIAGE_PARENT_ISSUE_KEY", "TRIAGE_OUTPUT_PATH"]
 
 
 def build_vault_links(vault_base):
-    """Walk vault to discover incident pages. Returns dict: lowercase key -> wiki link."""
+    """Walk vault to discover incident and triage pages. Returns dict: lowercase key -> wiki link."""
     links = {}
     if not vault_base or not os.path.isdir(vault_base):
         return links
+
+    # Incident pages: Incidents/YYYY-MM-DD — INC-NN — Title.md
     inc_dir = os.path.join(vault_base, "Incidents")
-    if not os.path.isdir(inc_dir):
-        return links
-    for f in os.listdir(inc_dir):
-        if not f.endswith(".md") or f.startswith("_"):
-            continue
-        name = f[:-3]
-        inc_match = re.search(r"INC-\d+", name, re.IGNORECASE)
-        if inc_match:
-            key = inc_match.group().upper()
-            links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+    if os.path.isdir(inc_dir):
+        for f in os.listdir(inc_dir):
+            if not f.endswith(".md") or f.startswith("_"):
+                continue
+            name = f[:-3]
+            inc_match = re.search(r"INC-\d+", name, re.IGNORECASE)
+            if inc_match:
+                key = inc_match.group().upper()
+                links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+
+    # Triage pages: Root Cause Triage/Issues/PDE-NNNN — Summary.md
+    triage_dir = os.path.join(vault_base, "Root Cause Triage", "Issues")
+    if os.path.isdir(triage_dir):
+        for f in os.listdir(triage_dir):
+            if not f.endswith(".md") or f.startswith("_"):
+                continue
+            name = f[:-3]
+            key_match = re.match(r"^([A-Z]+-\d+)", name)
+            if key_match:
+                key = key_match.group(1)
+                links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+
     return links
 
 COLLECT_DIR = "/tmp/triage_collect"
