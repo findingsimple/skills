@@ -110,6 +110,10 @@ Read the file. If it doesn't exist, create it with the appropriate template:
 
 **Mid Year template:**
 ```
+---
+person: "[[{Full Name}]]"
+---
+
 ==Living document for capturing feedback for upcoming {year} Mid Review Cycle for {Full Name}==
 ## What should this person keep doing that contributes to the success of the company?
 
@@ -126,6 +130,10 @@ xxx
 
 **EOY template:**
 ```
+---
+person: "[[{Full Name}]]"
+---
+
 ==Living document for capturing feedback for upcoming {year} EOY Review Cycle for {Full Name}==
 ## What are the most significant accomplishments this person has demonstrated this year?
 
