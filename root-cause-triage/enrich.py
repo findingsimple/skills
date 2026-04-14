@@ -200,8 +200,12 @@ def cmd_apply(args):
             if "classification:" in content:
                 content = re.sub(r'^classification:.*$', 'classification: %s' % classification, content, flags=re.MULTILINE)
             else:
-                # Insert before the closing --- of frontmatter
-                content = re.sub(r'^(linked_issue_count:.*)\n---', r'\1\nclassification: %s\n---' % classification, content, flags=re.MULTILINE)
+                # Insert before tags line in frontmatter
+                content = re.sub(r'^(linked_issue_count:.*)\n(tags:)', r'\1\nclassification: %s\n\2' % classification, content, flags=re.MULTILINE)
+            # Update tags to include classification
+            cls_tag = classification.replace("_", "-")
+            if cls_tag and ("tags:" in content) and (cls_tag not in content):
+                content = re.sub(r'^tags: \[root-cause\]', 'tags: [root-cause, %s]' % cls_tag, content, flags=re.MULTILINE)
 
         # Insert or replace Root Cause Analysis section (before Description)
         analysis = enrichment.get("root_cause_analysis", "")

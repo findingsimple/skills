@@ -391,7 +391,7 @@ def cmd_apply(args):
         else:
             # Insert before closing --- of frontmatter
             content = re.sub(
-                r"^((?:linked_issue_count|classification):.*)\n---",
+                r"^((?:linked_issue_count|classification|tags):.*)\n---",
                 r"\1\nautofill: agent-generated\n---",
                 content,
                 flags=re.MULTILINE,

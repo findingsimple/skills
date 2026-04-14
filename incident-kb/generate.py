@@ -354,6 +354,15 @@ def format_incident_markdown(incident):
         fm_lines.append("labels: [%s]" % ", ".join(quoted_labels))
     fm_lines.append("remediation_status: %s" % incident["remediation_status"])
     fm_lines.append("synced_at: %s" % datetime.now(timezone.utc).isoformat())
+    # Build tags for graph clustering
+    tags = ["incident"]
+    sev = (incident.get("severity") or "").strip().lower()
+    if sev and sev != "default":
+        tags.append("sev/%s" % sev)
+    for label in (incident.get("labels") or []):
+        if label.startswith("team-"):
+            tags.append(label)
+    fm_lines.append("tags: [%s]" % ", ".join(tags))
     fm_lines.append("---")
 
     # Build body

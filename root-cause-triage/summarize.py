@@ -308,6 +308,7 @@ def process_issue(data, jira_base, parent_key, vault_links=None):
         "parent_epic: %s" % parent_key,
         "collected_at: %s" % data.get("collected_at", ""),
         "linked_issue_count: %d" % data.get("linked_issue_count", 0),
+        "tags: [root-cause]",
         "---",
         "",
         "# [%s](%s/browse/%s) — %s" % (key, jira_base, key, summary),
