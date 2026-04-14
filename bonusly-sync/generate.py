@@ -44,7 +44,7 @@ def format_date(created_at):
     return created_at[:10]
 
 
-def generate_person_markdown(period, period_label, received, given):
+def generate_person_markdown(period, period_label, received, given, person_name=""):
     """Generate markdown content for one person's Bonusly file."""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -53,6 +53,7 @@ def generate_person_markdown(period, period_label, received, given):
     lines.append("source: bonusly")
     lines.append('period: "%s"' % period)
     lines.append('generated_at: "%s"' % now_utc)
+    lines.append('person: "[[%s]]"' % person_name)
     lines.append("---")
     lines.append("")
     lines.append("# Bonusly Recognition — %s" % period_label)
@@ -139,7 +140,7 @@ def main():
             files_skipped += 1
             continue
 
-        md = generate_person_markdown(period, period_label, received, given)
+        md = generate_person_markdown(period, period_label, received, given, name)
         file_path = os.path.join(person_dir, "Feedback", "Bonusly - %s.md" % period)
 
         if args.dry_run:

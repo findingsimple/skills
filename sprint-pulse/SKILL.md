@@ -257,7 +257,7 @@ Frontmatter:
 ```yaml
 ---
 type: sprint-pulse
-team: {vault_dir}
+team: "[[{vault_dir}]]"
 project_key: {project_key}
 sprint_name: "{sprint_name}"
 date: {YYYY-MM-DD}

@@ -7,12 +7,12 @@ Use the template that matches the detected retro format.
 ```markdown
 ---
 date: {YYYY-MM-DD}
-team: {team_name}
+team: "[[{team_name}]]"
 type: retro
 format: rose-thorn-bud
 source: {figma_url}
 generated_at: {ISO 8601 UTC timestamp}
-participants: [{author1}, {author2}, ...]
+participants: ["[[{author1}]]", "[[{author2}]]", ...]
 ---
 
 # Retro — {display_date}
@@ -55,12 +55,12 @@ participants: [{author1}, {author2}, ...]
 ```markdown
 ---
 date: {YYYY-MM-DD}
-team: {team_name}
+team: "[[{team_name}]]"
 type: retro
 format: wind-sun-anchor-reef
 source: {figma_url}
 generated_at: {ISO 8601 UTC timestamp}
-participants: [{author1}, {author2}, ...]
+participants: ["[[{author1}]]", "[[{author2}]]", ...]
 ---
 
 # Retro — {display_date}
@@ -109,7 +109,8 @@ participants: [{author1}, {author2}, ...]
 ## Rules
 
 - Sort raw feedback stickies within each category by vote count (highest first), then alphabetically by author.
-- Wrap each author name in Raw Feedback sections with Obsidian wiki links: `**[[{Author}]]**`. Do not add wiki links inside YAML frontmatter (the `participants` list stays as plain text).
+- Wrap each author name in Raw Feedback sections with Obsidian wiki links: `**[[{Author}]]**`.
+- Wrap each participant name and the team name in YAML frontmatter with wiki links: `"[[{Name}]]"`. This connects retros to person pages and team hubs in the Obsidian graph.
 - The `display_date` in the heading should be human-readable (e.g., "5 November 2025").
 - The `participants` frontmatter list should be sorted alphabetically.
 - The `generated_at` timestamp should be current UTC time in ISO 8601 format.

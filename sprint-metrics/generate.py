@@ -527,7 +527,7 @@ def main():
     lines = []
     lines.append("---")
     lines.append("type: sprint-metrics")
-    lines.append("team: " + vault_dir)
+    lines.append('team: "[[%s]]"' % vault_dir)
     lines.append("project_key: " + project_key)
     lines.append('sprint_name: "%s"' % sprint_name)
     lines.append("sprint_id: " + sprint_id)
