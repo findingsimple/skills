@@ -384,6 +384,64 @@ def generate_sprint_timeline(team_dir, team_name, dry_run):
     return out_path
 
 
+def generate_plans_index(vault_base, dry_run):
+    """Generate Plans/_Index.md listing all plans reverse-chronologically."""
+    plans_dir = os.path.join(vault_base, "Plans")
+    if not os.path.isdir(plans_dir):
+        return None
+
+    files = sorted(
+        (f for f in os.listdir(plans_dir)
+         if f.endswith(".md") and not f.startswith("_")),
+        reverse=True,
+    )
+
+    if not files:
+        return None
+
+    lines = [
+        "---",
+        "type: index",
+        "scope: plans",
+        "generated: true",
+        "---",
+        "",
+        "# Plans",
+        "",
+        "| Date | Plan |",
+        "|------|------|",
+    ]
+
+    for f in files:
+        name = f[:-3]
+        # Extract date from filename (YYYY-MM-DD prefix)
+        date = name[:10] if len(name) >= 10 else ""
+        # Read first H1 heading for the title
+        title = name
+        filepath = os.path.join(plans_dir, f)
+        try:
+            with open(filepath, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("# "):
+                        title = line[2:].strip()
+                        break
+        except (OSError, UnicodeDecodeError):
+            pass
+        lines.append("| %s | [[%s\\|%s]] |" % (date, name, title))
+
+    lines.append("")
+    content = "\n".join(lines)
+    out_path = os.path.join(plans_dir, "_Index.md")
+
+    if not dry_run:
+        tmp_path = out_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, out_path)
+
+    return out_path
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -445,6 +503,10 @@ def main():
             idx_path = generate_sprint_timeline(team_dir, team_name, args.dry_run)
             if idx_path:
                 indexes_created.append(os.path.relpath(idx_path, args.vault_base))
+
+        idx_path = generate_plans_index(args.vault_base, args.dry_run)
+        if idx_path:
+            indexes_created.append(os.path.relpath(idx_path, args.vault_base))
 
     if indexes_created:
         action = "Would create" if args.dry_run else "Created"
