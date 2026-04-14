@@ -61,22 +61,6 @@ def extract_date_from_title(title):
     return ""
 
 
-def wiki_to_md_link(wiki_link):
-    """Convert [[filename\\|display]] to [display](<filename.md>) for graph-invisible links.
-
-    Uses angle-bracket syntax for CommonMark compliance (filenames contain spaces/em-dashes).
-    Returns non-wiki-link input unchanged (e.g. bold text, bare keys).
-    """
-    if not wiki_link:
-        return wiki_link
-    m = re.match(r"\[\[(.+?)\\?\|(.+?)\]\]", wiki_link)
-    if m:
-        return "[%s](<%s.md>)" % (m.group(2), m.group(1))
-    m = re.match(r"\[\[(.+?)\]\]", wiki_link)
-    if m:
-        return "[%s](<%s.md>)" % (m.group(1), m.group(1))
-    return wiki_link
-
 
 def build_vault_links(vault_base):
     """Walk vault to discover linkable pages. Returns dict: lowercase key -> wiki link."""
@@ -881,7 +865,7 @@ def generate_incident_index(incidents, output_path, dry_run):
 
             sev_tag = " (Sev%s)" % severity if severity else ""
             display = "%s — %s" % (inc_key, title) if inc_key else title
-            lines.append("- [%s](<%s.md>)%s" % (display, filename, sev_tag))
+            lines.append("- [[%s\\|%s]]%s" % (filename, display, sev_tag))
         lines.append("")
 
     content = "\n".join(lines)

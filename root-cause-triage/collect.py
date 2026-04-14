@@ -272,7 +272,7 @@ def write_index(issues_data, output_path, parent_key):
         key = issue["key"]
         filename = file_map.get(key)
         if filename:
-            key_cell = "[%s](<%s.md>)" % (key, filename)
+            key_cell = "[[%s\\|%s]]" % (filename, key)
         else:
             key_cell = key
         summary_short = issue["summary"][:60] + ("..." if len(issue["summary"]) > 60 else "")
