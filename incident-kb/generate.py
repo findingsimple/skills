@@ -483,7 +483,11 @@ def format_incident_markdown(incident):
         body_lines.extend(links)
         body_lines.append("")
 
-    return "\n".join(fm_lines) + "\n\n" + "\n".join(body_lines)
+    body = "\n".join(body_lines)
+    # Wrap Slack channel references in backticks to prevent Obsidian tag parsing.
+    # Matches #channel-name mid-line (not headings which start at column 0).
+    body = re.sub(r'(?<=\s)(#[a-z][a-z0-9_-]+)', r'`\1`', body)
+    return "\n".join(fm_lines) + "\n\n" + body
 
 
 def add_vault_links_to_body(content, vault_links, self_keys=None):
