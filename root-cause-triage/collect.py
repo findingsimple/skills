@@ -245,10 +245,10 @@ def _build_issue_file_map(issues_dir):
 
 
 def write_index(issues_data, output_path, parent_key):
-    """Write/update the index file at {output_path}/Issues/_index.md."""
+    """Write/update the index file at {output_path}/Issues/_Index.md."""
     issues_dir = os.path.join(output_path, "Issues")
     os.makedirs(issues_dir, exist_ok=True)
-    index_path = os.path.join(issues_dir, "_index.md")
+    index_path = os.path.join(issues_dir, "_Index.md")
 
     # Map keys to actual filenames for wiki links
     file_map = _build_issue_file_map(issues_dir)

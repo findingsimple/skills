@@ -296,7 +296,7 @@ Scan existing Obsidian vault files and add `[[wiki links]]` to known entities. L
 - `Teams/{team}/{team}.md` — team hub with member links, sprint timeline, and retro links (wiki links — semantic relationships)
 - `Plans/_Index.md` — index of all plan files (standard markdown links — graph-invisible)
 
-> **Note:** `Incidents/_Index.md` and `Root Cause Triage/Issues/_index.md` use standard markdown links (clickable but graph-invisible) to prevent mega-hub nodes. Sprint summary assignee names are intentionally left as plain text to avoid graph noise.
+> **Note:** `Incidents/_Index.md` and `Root Cause Triage/Issues/_Index.md` use standard markdown links (clickable but graph-invisible) to prevent mega-hub nodes. Sprint summary assignee names are intentionally left as plain text to avoid graph noise.
 
 **Prerequisites:**
 - `OBSIDIAN_TEAMS_PATH` in `~/.zshrc`
