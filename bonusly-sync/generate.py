@@ -67,15 +67,15 @@ def generate_person_markdown(period, period_label, received, given):
             amount = b.get("amount", 0)
             giver = (b.get("giver") or {}).get("full_name", "Unknown")
             reason = b.get("reason", "").strip()
-            lines.append('- **%s** — +%d from **%s**: "%s"' % (date, amount, giver, reason))
+            lines.append('- **%s** — +%d from **[[%s]]**: "%s"' % (date, amount, giver, reason))
             for child in b.get("child_bonuses", []):
                 child_giver = (child.get("giver") or {}).get("full_name", "Unknown")
                 child_amount = child.get("amount", 0)
                 child_reason = (child.get("reason") or "").strip()
                 if child_reason:
-                    lines.append('  - +%d from **%s**: "%s"' % (child_amount, child_giver, child_reason))
+                    lines.append('  - +%d from **[[%s]]**: "%s"' % (child_amount, child_giver, child_reason))
                 else:
-                    lines.append("  - +%d from **%s**" % (child_amount, child_giver))
+                    lines.append("  - +%d from **[[%s]]**" % (child_amount, child_giver))
 
     if given:
         total_pts = sum(b.get("amount", 0) for b in given)
@@ -87,7 +87,7 @@ def generate_person_markdown(period, period_label, received, given):
             amount = b.get("amount", 0)
             receiver = (b.get("receiver") or {}).get("full_name", "Unknown")
             reason = b.get("reason", "").strip()
-            lines.append('- **%s** — +%d to **%s**: "%s"' % (date, amount, receiver, reason))
+            lines.append('- **%s** — +%d to **[[%s]]**: "%s"' % (date, amount, receiver, reason))
 
     return "\n".join(lines) + "\n"
 
@@ -173,7 +173,7 @@ def main():
     for row in log_rows:
         rec_str = "%d (%d pts)" % (row["received_count"], row["received_pts"]) if row["received_count"] else "0"
         giv_str = "%d (%d pts)" % (row["given_count"], row["given_pts"]) if row["given_count"] else "0"
-        log_lines.append("| %s | %s | %s | %s |" % (row["name"], rec_str, giv_str, row["status"]))
+        log_lines.append("| [[%s]] | %s | %s | %s |" % (row["name"], rec_str, giv_str, row["status"]))
     log_lines.append("")
     log_lines.append("**%d files created**, %d skipped. %d people processed." % (
         files_created, files_skipped, len(people)))

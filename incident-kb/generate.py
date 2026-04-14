@@ -61,6 +61,36 @@ def extract_date_from_title(title):
     return ""
 
 
+def build_vault_links(vault_base):
+    """Walk vault to discover linkable pages. Returns dict: lowercase key -> wiki link."""
+    links = {}
+    if not vault_base or not os.path.isdir(vault_base):
+        return links
+
+    for root, dirs, files in os.walk(vault_base):
+        for f in files:
+            if not f.endswith(".md") or f.startswith("_"):
+                continue
+            name = f[:-3]
+            rel = os.path.relpath(os.path.join(root, f), vault_base)
+
+            # Incident pages: Incidents/YYYY-MM-DD — INC-NN — Title.md
+            if "Incidents" in rel:
+                inc_match = re.search(r"INC-\d+", name, re.IGNORECASE)
+                if inc_match:
+                    key = inc_match.group().upper()
+                    links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+
+            # Triage pages: Root Cause Triage/Issues/KEY — Summary.md
+            if "Root Cause Triage" in rel and "Issues" in rel:
+                key_match = re.match(r"^([A-Z]+-\d+)", name)
+                if key_match:
+                    key = key_match.group()
+                    links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+
+    return links
+
+
 CACHE_DIR = "/tmp/incident_kb"
 CONFLUENCE_DIR = os.path.join(CACHE_DIR, "confluence")
 JIRA_DIR = os.path.join(CACHE_DIR, "jira")
@@ -446,6 +476,71 @@ def format_incident_markdown(incident):
     return "\n".join(fm_lines) + "\n\n" + "\n".join(body_lines)
 
 
+def add_vault_links_to_body(content, vault_links, self_keys=None):
+    """Replace bare Jira keys in body text with wiki links to vault pages.
+
+    Skips keys inside YAML frontmatter, existing [[links]], [text](url), and code blocks.
+    self_keys: set of lowercase keys to skip (prevents self-linking).
+    """
+    if not vault_links or not content:
+        return content
+    if self_keys is None:
+        self_keys = set()
+
+    # Find protected ranges
+    protected = []
+    # Frontmatter
+    if content.startswith("---"):
+        end = content.find("\n---", 3)
+        if end != -1:
+            protected.append((0, end + 4))
+        else:
+            protected.append((0, len(content)))
+    # Code blocks
+    for m in re.finditer(r"^(`{3,}|~{3,}).*?\n.*?^\1\s*$", content, re.MULTILINE | re.DOTALL):
+        protected.append((m.start(), m.end()))
+    # Inline code
+    for m in re.finditer(r"`[^`]+`", content):
+        protected.append((m.start(), m.end()))
+    # Existing wiki links
+    for m in re.finditer(r"\[\[[^\]]+\]\]", content):
+        protected.append((m.start(), m.end()))
+    # Markdown links
+    for m in re.finditer(r"\[[^\]]*\]\([^)]*\)", content):
+        protected.append((m.start(), m.end()))
+    # URLs
+    for m in re.finditer(r"https?://\S+", content):
+        protected.append((m.start(), m.end()))
+
+    protected.sort()
+
+    # Replace bare Jira keys
+    pattern = re.compile(r"\b([A-Z]+-\d+)\b")
+    result = []
+    last_end = 0
+    for m in pattern.finditer(content):
+        key = m.group(1)
+        if key.lower() in self_keys:
+            continue
+        wiki_link = vault_links.get(key.lower())
+        if not wiki_link:
+            continue
+        # Check if match overlaps any protected range
+        pos = m.start()
+        end_pos = m.end()
+        in_protected = any(pos < e and end_pos > s for s, e in protected)
+        if in_protected:
+            continue
+        result.append(content[last_end:m.start()])
+        result.append(wiki_link)
+        last_end = m.end()
+
+    if not result:
+        return content
+    result.append(content[last_end:])
+    return "".join(result)
+
+
 def write_file(path, content, dry_run):
     """Write content to a file using cat heredoc (avoids Write tool / TCC prompts)."""
     if dry_run:
@@ -468,8 +563,10 @@ def is_test_incident(incident):
     return any(p in title for p in test_patterns)
 
 
-def generate_incident_files(incidents, output_path, dry_run, force):
+def generate_incident_files(incidents, output_path, dry_run, force, vault_links=None):
     """Generate per-incident markdown files."""
+    if vault_links is None:
+        vault_links = {}
     print("\n--- Generating incident files ---")
     written = 0
     skipped = 0
@@ -499,6 +596,12 @@ def generate_incident_files(incidents, output_path, dry_run, force):
             continue
 
         content = format_incident_markdown(incident)
+        # Add wiki links to triage/incident pages referenced in body
+        if vault_links:
+            self_keys = set()
+            if inc_key:
+                self_keys.add(inc_key.lower())
+            content = add_vault_links_to_body(content, vault_links, self_keys)
         write_file(filepath, content, dry_run)
         written += 1
 
@@ -611,7 +714,7 @@ def generate_trend_report(incidents, output_path, dry_run):
     write_file(filepath, content, dry_run)
 
 
-def generate_recurrence_report(incidents, output_path, dry_run):
+def generate_recurrence_report(incidents, output_path, dry_run, vault_links=None):
     """Generate recurrence report with pattern detection."""
     print("\n--- Generating recurrence report ---")
 
@@ -672,8 +775,10 @@ def generate_recurrence_report(incidents, output_path, dry_run):
                 key = inc.get("inc_key", "")
                 title = inc.get("title", "Unknown")
                 date = inc.get("date", "?")
+                vl = vault_links or {}
+                key_display = vl.get(key.lower(), "**%s**" % key) if key else ""
                 if key:
-                    lines.append("- **%s** — %s (%s)" % (key, title, date))
+                    lines.append("- %s — %s (%s)" % (key_display, title, date))
                 else:
                     lines.append("- %s (%s)" % (title, date))
             lines.append("")
@@ -685,9 +790,12 @@ def generate_recurrence_report(incidents, output_path, dry_run):
         # Sort by count, take top 15
         for keyword, incs in sorted(recurring_keywords.items(), key=lambda x: -len(x[1]))[:15]:
             unique_keys = set(inc.get("inc_key", inc.get("retro_page_id", "")) for inc in incs)
+            vl = vault_links or {}
+            linked_keys = []
+            for k in sorted(k for k in unique_keys if k)[:5]:
+                linked_keys.append(vl.get(k.lower(), k))
             lines.append("- **%s** — appears in %d incidents: %s" % (
-                keyword, len(incs),
-                ", ".join(sorted(k for k in unique_keys if k)[:5]),
+                keyword, len(incs), ", ".join(linked_keys),
             ))
         lines.append("")
 
@@ -696,15 +804,73 @@ def generate_recurrence_report(incidents, output_path, dry_run):
     if no_retro:
         lines.append("## Incidents Missing Retrospectives")
         lines.append("")
+        vl = vault_links or {}
         for inc in sorted(no_retro, key=lambda x: x.get("date", "")):
-            lines.append("- **%s** — %s (%s)" % (
-                inc.get("inc_key", "?"), inc.get("title", "Unknown"), inc.get("date", "?"),
+            key = inc.get("inc_key", "?")
+            key_display = vl.get(key.lower(), "**%s**" % key)
+            lines.append("- %s — %s (%s)" % (
+                key_display, inc.get("title", "Unknown"), inc.get("date", "?"),
             ))
         lines.append("")
 
     content = "\n".join(lines)
     filepath = os.path.join(output_path, "_Recurrence Report.md")
     write_file(filepath, content, dry_run)
+
+
+def generate_incident_index(incidents, output_path, dry_run):
+    """Generate _Index.md linking all incidents grouped by year."""
+    print("\n--- Generating incident index ---")
+
+    if not incidents:
+        print("No incidents to index.")
+        return
+
+    # Group by year, sorted by date descending within each year
+    by_year = defaultdict(list)
+    for inc in incidents:
+        date = inc.get("date", "") or "0000-00-00"
+        year = date[:4] if len(date) >= 4 else "Unknown"
+        by_year[year].append(inc)
+
+    lines = ["---"]
+    lines.append("type: index")
+    lines.append("scope: incidents")
+    lines.append("generated: %s" % datetime.now(timezone.utc).isoformat())
+    lines.append("incident_count: %d" % len(incidents))
+    lines.append("---")
+    lines.append("")
+    lines.append("# Incident Index")
+    lines.append("")
+    lines.append("Total: **%d** incidents" % len(incidents))
+    lines.append("")
+
+    for year in sorted(by_year.keys(), reverse=True):
+        year_incs = sorted(by_year[year], key=lambda x: x.get("date", ""), reverse=True)
+        lines.append("## %s (%d)" % (year, len(year_incs)))
+        lines.append("")
+        for inc in year_incs:
+            inc_key = inc.get("inc_key", "")
+            title = inc.get("title", "Unknown")
+            date = inc.get("date", "?")
+            severity = inc.get("severity", "")
+
+            # Build filename to match generate_incident_files logic
+            if inc_key:
+                filename = "%s — %s — %s" % (date, inc_key, sanitize_filename(title))
+            else:
+                page_id = inc.get("retro_page_id", "unknown")
+                filename = "%s — %s — %s" % (date, page_id, sanitize_filename(title))
+
+            sev_tag = " (Sev%s)" % severity if severity else ""
+            display = "%s — %s" % (inc_key, title) if inc_key else title
+            lines.append("- [[%s\\|%s]]%s" % (filename, display, sev_tag))
+        lines.append("")
+
+    content = "\n".join(lines)
+    filepath = os.path.join(output_path, "_Index.md")
+    write_file(filepath, content, dry_run)
+    print("Index: %d incidents across %d years" % (len(incidents), len(by_year)))
 
 
 def main():
@@ -743,13 +909,20 @@ def main():
         len(cross_ref.get("orphan_epics", [])),
     ))
 
+    # Build vault links for cross-referencing triage/incident pages
+    vault_base = os.path.dirname(output_path)  # output_path is .../Incidents, parent is HappyCo
+    vault_links = build_vault_links(vault_base)
+    if vault_links:
+        print("Discovered %d linkable vault pages for cross-referencing" % len(vault_links))
+
     # Generate per-incident files
     if not args.report_only:
-        generate_incident_files(incidents, output_path, args.dry_run, args.force)
+        generate_incident_files(incidents, output_path, args.dry_run, args.force, vault_links)
 
     # Generate reports
     generate_trend_report(incidents, output_path, args.dry_run)
-    generate_recurrence_report(incidents, output_path, args.dry_run)
+    generate_recurrence_report(incidents, output_path, args.dry_run, vault_links)
+    generate_incident_index(incidents, output_path, args.dry_run)
 
     print("\n--- Generation complete ---")
     print("Output: %s" % output_path)

@@ -13,6 +13,25 @@ from jira_client import load_env
 
 ENV_KEYS = ["JIRA_BASE_URL", "TRIAGE_PARENT_ISSUE_KEY", "TRIAGE_OUTPUT_PATH"]
 
+
+def build_vault_links(vault_base):
+    """Walk vault to discover incident pages. Returns dict: lowercase key -> wiki link."""
+    links = {}
+    if not vault_base or not os.path.isdir(vault_base):
+        return links
+    inc_dir = os.path.join(vault_base, "Incidents")
+    if not os.path.isdir(inc_dir):
+        return links
+    for f in os.listdir(inc_dir):
+        if not f.endswith(".md") or f.startswith("_"):
+            continue
+        name = f[:-3]
+        inc_match = re.search(r"INC-\d+", name, re.IGNORECASE)
+        if inc_match:
+            key = inc_match.group().upper()
+            links[key.lower()] = "[[%s\\|%s]]" % (name, key)
+    return links
+
 COLLECT_DIR = "/tmp/triage_collect"
 
 # Section headers in support ticket templates that contain the actual problem
@@ -171,8 +190,10 @@ def summarize_description(desc):
     return summary
 
 
-def build_linked_issues_section(linked_issues, jira_base):
+def build_linked_issues_section(linked_issues, jira_base, vault_links=None):
     """Build the Linked Issues section of the Markdown file."""
+    if vault_links is None:
+        vault_links = {}
     lines = ["## Linked Issues", ""]
 
     for group_label, issues in linked_issues.items():
@@ -207,9 +228,13 @@ def build_linked_issues_section(linked_issues, jira_base):
                 itype = issue.get("issue_type", "Unknown")
                 idesc = issue.get("description", "")
 
+                vault_ref = ""
+                vl = vault_links.get(ikey.lower())
+                if vl:
+                    vault_ref = " (%s)" % vl
                 lines.append(
-                    "- [%s](%s/browse/%s) — %s *(%s)* — **%s**"
-                    % (ikey, jira_base, ikey, isummary, itype, istatus)
+                    "- [%s](%s/browse/%s)%s — %s *(%s)* — **%s**"
+                    % (ikey, jira_base, ikey, vault_ref, isummary, itype, istatus)
                 )
 
                 if idesc:
@@ -226,9 +251,13 @@ def build_linked_issues_section(linked_issues, jira_base):
                 itype = issue.get("issue_type", "Unknown")
                 idesc = issue.get("description", "")
 
+                vault_ref = ""
+                vl = vault_links.get(ikey.lower())
+                if vl:
+                    vault_ref = " (%s)" % vl
                 lines.append(
-                    "#### [%s](%s/browse/%s) — %s *(%s)*"
-                    % (ikey, jira_base, ikey, isummary, itype)
+                    "#### [%s](%s/browse/%s)%s — %s *(%s)*"
+                    % (ikey, jira_base, ikey, vault_ref, isummary, itype)
                 )
                 lines.append("- **Status:** %s" % istatus)
 
@@ -246,7 +275,7 @@ def build_linked_issues_section(linked_issues, jira_base):
     return lines
 
 
-def process_issue(data, jira_base, parent_key):
+def process_issue(data, jira_base, parent_key, vault_links=None):
     """Convert a single issue's JSON data into Markdown content and filename."""
     key = data["key"]
     summary = data["summary"]
@@ -297,7 +326,7 @@ def process_issue(data, jira_base, parent_key):
     # Linked issues
     linked = data.get("linked_issues", {})
     if linked:
-        lines.extend(build_linked_issues_section(linked, jira_base))
+        lines.extend(build_linked_issues_section(linked, jira_base, vault_links))
 
     return filename, '\n'.join(lines)
 
@@ -325,6 +354,12 @@ def main():
     parent_key = env["TRIAGE_PARENT_ISSUE_KEY"]
     output_path = env["TRIAGE_OUTPUT_PATH"]
     issues_dir = os.path.join(output_path, "Issues")
+
+    # Build vault links for cross-referencing incident pages
+    vault_base = os.path.dirname(output_path)  # parent of triage output is the HappyCo dir
+    vault_links = build_vault_links(vault_base)
+    if vault_links:
+        print("Discovered %d incident pages for cross-referencing" % len(vault_links), file=sys.stderr)
 
     # Find JSON files to process
     if args.issue:
@@ -369,7 +404,7 @@ def main():
             continue
 
         try:
-            filename, content = process_issue(data, jira_base, parent_key)
+            filename, content = process_issue(data, jira_base, parent_key, vault_links)
         except Exception as e:
             errors.append("%s: failed to generate markdown — %s" % (key, e))
             print("  ERROR: %s: %s" % (key, e), file=sys.stderr)
@@ -380,8 +415,10 @@ def main():
             continue
 
         filepath = os.path.join(issues_dir, filename)
-        with open(filepath, 'w') as f:
+        tmp_path = filepath + ".tmp"
+        with open(tmp_path, 'w') as f:
             f.write(content)
+        os.replace(tmp_path, filepath)
         written += 1
 
     # Summary

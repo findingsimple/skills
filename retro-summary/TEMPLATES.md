@@ -31,7 +31,7 @@ participants: [{author1}, {author2}, ...]
 
 ### Raw Feedback
 {For each Rose sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 
 ## Thorn (Challenges & Negatives)
 
@@ -39,7 +39,7 @@ participants: [{author1}, {author2}, ...]
 
 ### Raw Feedback
 {For each Thorn sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 
 ## Bud (Opportunities & Growth)
 
@@ -47,7 +47,7 @@ participants: [{author1}, {author2}, ...]
 
 ### Raw Feedback
 {For each Bud sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 ```
 
 ## Wind/Sun/Anchor/Reef template
@@ -81,13 +81,13 @@ participants: [{author1}, {author2}, ...]
 
 #### Raw Feedback
 {For each Wind sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 
 ### Sun — Made us feel good
 
 #### Raw Feedback
 {For each Sun sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 
 ## Friction & Blockers (Anchor)
 
@@ -95,7 +95,7 @@ participants: [{author1}, {author2}, ...]
 
 ### Raw Feedback
 {For each Anchor sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 
 ## Risks to Watch (Reef)
 
@@ -103,12 +103,13 @@ participants: [{author1}, {author2}, ...]
 
 ### Raw Feedback
 {For each Reef sticky:}
-- **{Author}**: {text}
+- **[[{Author}]]**: {text}
 ```
 
 ## Rules
 
 - Sort raw feedback stickies within each category by vote count (highest first), then alphabetically by author.
+- Wrap each author name in Raw Feedback sections with Obsidian wiki links: `**[[{Author}]]**`. Do not add wiki links inside YAML frontmatter (the `participants` list stays as plain text).
 - The `display_date` in the heading should be human-readable (e.g., "5 November 2025").
 - The `participants` frontmatter list should be sorted alphabetically.
 - The `generated_at` timestamp should be current UTC time in ISO 8601 format.

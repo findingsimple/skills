@@ -230,11 +230,28 @@ def process_issue(base_url, auth, issue, status_column_map=None):
     }
 
 
+def _build_issue_file_map(issues_dir):
+    """Scan Issues directory to map Jira keys to actual filenames on disk."""
+    file_map = {}
+    if not os.path.isdir(issues_dir):
+        return file_map
+    for f in os.listdir(issues_dir):
+        if not f.endswith(".md") or f.startswith("_"):
+            continue
+        key_match = re.match(r"^([A-Z]+-\d+)", f)
+        if key_match:
+            file_map[key_match.group(1)] = f[:-3]  # strip .md
+    return file_map
+
+
 def write_index(issues_data, output_path, parent_key):
     """Write/update the index file at {output_path}/Issues/_index.md."""
     issues_dir = os.path.join(output_path, "Issues")
     os.makedirs(issues_dir, exist_ok=True)
     index_path = os.path.join(issues_dir, "_index.md")
+
+    # Map keys to actual filenames for wiki links
+    file_map = _build_issue_file_map(issues_dir)
 
     now = datetime.now(timezone.utc).isoformat()
     lines = [
@@ -252,10 +269,16 @@ def write_index(issues_data, output_path, parent_key):
     ]
 
     for issue in issues_data:
+        key = issue["key"]
+        filename = file_map.get(key)
+        if filename:
+            key_cell = "[[%s\\|%s]]" % (filename, key)
+        else:
+            key_cell = key
         summary_short = issue["summary"][:60] + ("..." if len(issue["summary"]) > 60 else "")
         board_col = issue.get("board_column", "") or ""
         lines.append("| %s | %s | %s | %s | %d | %s |" % (
-            issue["key"],
+            key_cell,
             summary_short,
             board_col,
             issue["status"],
@@ -263,8 +286,10 @@ def write_index(issues_data, output_path, parent_key):
             issue["collected_at"][:10],
         ))
 
-    with open(index_path, "w") as f:
+    tmp_path = index_path + ".tmp"
+    with open(tmp_path, "w") as f:
         f.write("\n".join(lines) + "\n")
+    os.replace(tmp_path, index_path)
 
     return index_path
 

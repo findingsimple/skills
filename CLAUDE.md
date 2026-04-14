@@ -67,6 +67,9 @@ Each skill lives in its own directory with a `SKILL.md` file:
     jira_client.py      # Jira API client (load_env, auth, jira_get, jira_search_all)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches sprint report data, generates summary markdown
+  vault-linker/
+    SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
+    link.py             # Scans vault for entities, adds [[wiki links]] to existing files, generates index pages
   schedules/
     install.sh                              # Install/unload macOS LaunchAgents from templates
     com.claude.sprint-pulse.plist.template  # Runs /sprint-pulse weekdays at 08:30
@@ -104,6 +107,8 @@ Full best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-
 - **Gitignore runtime artifacts** — if a skill writes persistent files into its own directory (e.g., `triage_history.json`), add them to `.gitignore`. Only `/tmp/` files are ephemeral by default; anything in the skill directory will be tracked by git otherwise.
 - **Scheduled execution** — the `schedules/` directory contains macOS LaunchAgent templates and an `install.sh` script for running skills on a cron-like schedule. Templates use `{{HOME}}` placeholders resolved at install time. Generated `.plist` files are gitignored; only `.plist.template` files are committed.
 - **Keep README in sync with SKILL.md** — when a SKILL.md's capabilities, supported formats, or prerequisites change, update the corresponding entry in `README.md` too. The README is the public-facing summary; stale entries mislead users.
+- **Escape pipes in wiki link aliases** — Obsidian wiki links with aliases (`[[filename|display]]`) break inside markdown tables because `|` is the column separator. Always use `\|` instead: `[[filename\|display]]`. Obsidian renders `\|` correctly in all contexts (tables, lists, paragraphs). This applies to all skills that emit `[[...|...]]` links — vault-linker, incident-kb, root-cause-triage, and any future skill writing wiki links. Plain `[[Name]]` links (no alias) are unaffected.
+- **No wiki links for sprint table assignees** — linking person names in sprint summary tables adds graph noise without navigational value (~400 links that all point to the same few people). Person links in retros and bonusly entries are more meaningful — they represent feedback/recognition context. Sprint summaries should keep assignee names as plain text.
 
 ## Environment Variables
 
