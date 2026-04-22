@@ -556,7 +556,7 @@ def add_vault_links_to_body(content, vault_links, self_keys=None):
 
 
 def write_file(path, content, dry_run):
-    """Write content to a file using cat heredoc (avoids Write tool / TCC prompts)."""
+    """Write content to a file atomically (avoids partial files if interrupted)."""
     if dry_run:
         print("  Would write: %s" % path)
         return
@@ -564,9 +564,12 @@ def write_file(path, content, dry_run):
     # Ensure parent directory exists
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    # Write directly from Python (this script runs via Bash, not the Write tool)
-    with open(path, "w", encoding="utf-8") as f:
+    # Atomic write: .tmp + os.replace prevents corrupt vault markdown if the
+    # process is interrupted mid-write.
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
+    os.replace(tmp, path)
 
 
 def is_test_incident(incident):

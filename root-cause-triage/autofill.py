@@ -236,7 +236,11 @@ def cmd_prepare(args):
         return
 
     # Create batches
+    if os.path.islink(AUTOFILL_DIR):
+        print("ERROR: %s is a symlink; refusing to use it." % AUTOFILL_DIR, file=sys.stderr)
+        sys.exit(1)
     os.makedirs(AUTOFILL_DIR, mode=0o700, exist_ok=True)
+    os.chmod(AUTOFILL_DIR, 0o700)
     batch_size = args.batch_size
     batches = []
     for i in range(0, len(blocks), batch_size):

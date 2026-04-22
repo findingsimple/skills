@@ -14,6 +14,33 @@ from jira_client import load_env, init_auth, jira_get, jira_search_all, jira_get
 from gitlab_client import load_gitlab_env, gitlab_get, gitlab_get_all, search_mrs_for_issue, get_mr_notes
 
 
+# Anchored \A...\Z + re.ASCII prevents trailing-newline/Unicode bypasses of
+# JQL/URL interpolation.
+_NUMERIC_ID_RE = re.compile(r"\A\d+\Z", re.ASCII)
+_PROJECT_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
+# Jira labels: lowercase, digits, hyphen, underscore (no dots/spaces per Jira rules).
+_LABEL_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-]{0,63}\Z", re.ASCII)
+# Team field display names are human-facing but we scope to safe tokens for JQL.
+_TEAM_NAME_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _\-]{0,63}\Z", re.ASCII)
+
+
+def _require_match(pattern, value, name):
+    if not pattern.match(value or ""):
+        print("ERROR: %s is malformed: %r" % (name, value), file=sys.stderr)
+        sys.exit(2)
+
+
+def _filter_match(pattern, values, name):
+    """Keep only values matching `pattern`; warn about any dropped."""
+    out = []
+    for v in values:
+        if pattern.match(v):
+            out.append(v)
+        else:
+            print("WARNING: %s: dropping malformed value %r" % (name, v), file=sys.stderr)
+    return out
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--team-vault-dir", required=True)
@@ -333,6 +360,13 @@ def main():
     # Init GitLab
     gitlab_url, gitlab_token, gitlab_project_id = load_gitlab_env()
 
+    # Validate identifiers used in JQL/URL interpolation.
+    _require_match(_NUMERIC_ID_RE, args.board_id, "--board-id")
+    _require_match(_NUMERIC_ID_RE, args.sprint_id, "--sprint-id")
+    _require_match(_PROJECT_KEY_RE, args.project_key, "--project-key")
+    if args.support_project_key:
+        _require_match(_PROJECT_KEY_RE, args.support_project_key, "--support-project-key")
+
     # Load board config
     board_config = []
     if args.board_config_json:
@@ -479,6 +513,7 @@ def main():
         team_clauses = []
         if args.support_label:
             labels = [l.strip() for l in args.support_label.split(",") if l.strip()]
+            labels = _filter_match(_LABEL_RE, labels, "--support-label")
             if len(labels) == 1:
                 team_clauses.append('labels = "%s"' % labels[0])
             elif len(labels) > 1:
@@ -486,6 +521,7 @@ def main():
                 team_clauses.append("labels in (%s)" % label_list)
         if args.support_team_field:
             values = [v.strip() for v in args.support_team_field.split(",") if v.strip()]
+            values = _filter_match(_TEAM_NAME_RE, values, "--support-team-field")
             # The Team field (atlassian-team type) requires UUIDs in JQL, not display names.
             # Resolve each name to its UUID by looking up a known ticket with that team label.
             resolved_ids = []

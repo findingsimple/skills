@@ -30,7 +30,10 @@ JIRA_DIR = os.path.join(CACHE_DIR, "jira")
 META_FILE = os.path.join(CACHE_DIR, "meta.json")
 
 INC_KEY_PATTERN = re.compile(r"(INC-\d+)", re.IGNORECASE)
-PROJECT_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]+$")
+# \A...\Z + re.ASCII defeats trailing-newline and Unicode-lookalike bypasses
+# (Python's `$` matches before a trailing \n — `re.compile(r"^X$")` accepts
+# "X\n", which would enable JQL injection when interpolated).
+PROJECT_KEY_PATTERN = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
 
 
 def _read_cache(path):
@@ -432,10 +435,16 @@ def main():
     base_url, auth = init_auth(env)
     parent_page_id = env["RETRO_PARENT_PAGE_ID"]
 
-    # Create cache dirs with restrictive permissions
+    # Create cache dirs with restrictive permissions. `exist_ok=True` alone
+    # does not repair perms on a pre-existing dir — chmod explicitly, and
+    # reject symlinks that could redirect writes.
     if not args.dry_run:
-        os.makedirs(CONFLUENCE_DIR, mode=0o700, exist_ok=True)
-        os.makedirs(JIRA_DIR, mode=0o700, exist_ok=True)
+        for d in (CONFLUENCE_DIR, JIRA_DIR):
+            if os.path.islink(d):
+                print("ERROR: %s is a symlink; refusing to use it." % d, file=sys.stderr)
+                sys.exit(1)
+            os.makedirs(d, mode=0o700, exist_ok=True)
+            os.chmod(d, 0o700)
 
     # Fetch
     retro_pages = fetch_retro_pages(base_url, auth, parent_page_id, args.force, args.dry_run)

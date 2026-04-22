@@ -13,6 +13,18 @@ from collections import defaultdict
 from jira_client import load_env, init_auth, jira_get, jira_search_all
 
 
+# Anchored \A...\Z + re.ASCII prevents trailing-newline and Unicode-lookalike
+# bypasses that would enable JQL/URL injection.
+_NUMERIC_ID_RE = re.compile(r"\A\d+\Z", re.ASCII)
+_PROJECT_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
+
+
+def _require(pattern, value, name):
+    if not pattern.match(value or ""):
+        print("ERROR: %s is malformed: %r" % (name, value), file=sys.stderr)
+        sys.exit(2)
+
+
 def normalize_sprint_name(name):
     """Normalize sprint name to '{PROJECT} {YEAR} Sprint {N}' format."""
     m = re.match(r'^(\w+)\s+Sprint\s+(\d{4})\s+(\d+)$', name)
@@ -66,6 +78,7 @@ def main():
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
 
     sprint_id = args.sprint_id
+    _require(_NUMERIC_ID_RE, sprint_id, "--sprint-id")
     sprint_name = normalize_sprint_name(args.sprint_name)
     if not sprint_name:
         print("ERROR: sprint_name is required", file=sys.stderr)
@@ -74,6 +87,10 @@ def main():
     end_date = args.end_date[:10]
     goal = args.goal
     board_id = args.board_id
+    _require(_NUMERIC_ID_RE, board_id, "--board-id")
+    support_project_key = env.get("SUPPORT_PROJECT_KEY", "")
+    if support_project_key:
+        _require(_PROJECT_KEY_RE, support_project_key, "SUPPORT_PROJECT_KEY")
     vault_dir = args.team_vault_dir
     project_key = args.team_project_key
     display_name = args.team_display_name
@@ -128,8 +145,6 @@ def main():
         jql = "sprint=%s AND issuetype in subtaskIssueTypes() ORDER BY parent,key" % sprint_id
         fields = "summary,status,issuetype,assignee,priority,parent"
         return jira_search_all(base_url, auth, jql, fields)
-
-    support_project_key = env.get("SUPPORT_PROJECT_KEY", "")
 
     def fetch_support():
         """Fetch support tickets from the configured support project."""

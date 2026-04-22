@@ -14,6 +14,17 @@ from collections import defaultdict
 from jira_client import load_env, init_auth, jira_get, gitlab_get, gitlab_get_all
 
 
+# Anchored \A...\Z + re.ASCII prevents trailing-newline bypasses of JQL/URL
+# interpolation.
+_NUMERIC_ID_RE = re.compile(r"\A\d+\Z", re.ASCII)
+
+
+def _require_numeric(value, name):
+    if not _NUMERIC_ID_RE.match(value or ""):
+        print("ERROR: %s must be numeric, got %r" % (name, value), file=sys.stderr)
+        sys.exit(2)
+
+
 def normalize_sprint_name(name):
     """Normalize sprint name to '{PROJECT} {YEAR} Sprint {N}' format."""
     m = re.match(r'^(\w+)\s+Sprint\s+(\d{4})\s+(\d+)$', name)
@@ -210,6 +221,7 @@ def main():
         print("Reading sprint summary from: %s" % args.summary_file, file=sys.stderr)
         frontmatter, issue_keys = parse_summary_file(args.summary_file)
         sprint_id = args.sprint_id or frontmatter.get("sprint_id", "")
+        _require_numeric(sprint_id, "sprint_id (from args or summary frontmatter)")
         sprint_name = normalize_sprint_name(args.sprint_name or frontmatter.get("sprint_name", ""))
         start_date = (args.start_date or frontmatter.get("start_date", ""))[:10]
         end_date = (args.end_date or frontmatter.get("end_date", ""))[:10]
@@ -228,10 +240,12 @@ def main():
                 display_name = vault_dir
     else:
         sprint_id = args.sprint_id
+        _require_numeric(sprint_id, "--sprint-id")
         sprint_name = normalize_sprint_name(args.sprint_name)
         start_date = args.start_date[:10]
         end_date = args.end_date[:10]
         board_id = args.board_id
+        _require_numeric(board_id, "--board-id")
         vault_dir = args.team_vault_dir
         project_key = args.team_project_key
         display_name = args.team_display_name

@@ -55,15 +55,24 @@ def fetch_single_issue(base_url, auth, key):
     return [data]
 
 
+_STATUS_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _-]*\Z", re.ASCII)
+
+
 def fetch_all_issues(base_url, auth, parent_key, status_filter=None, include_done=False):
     """Fetch all sibling issues under the parent epic.
 
     By default, mirrors the board's 'hide older items' behaviour: excludes
     issues in a Done status category that haven't been updated in the last 2 weeks.
     Pass include_done=True to fetch everything.
+
+    `parent_key` must be pre-validated against the Jira key regex by the caller.
+    `status_filter`, if provided, is validated here before interpolation.
     """
     jql = "parent = %s" % parent_key
     if status_filter:
+        if not _STATUS_RE.match(status_filter):
+            print("ERROR: --status %r contains unsupported characters (allowed: letters, digits, spaces, _ and -)" % status_filter, file=sys.stderr)
+            sys.exit(2)
         jql += ' AND status = "%s"' % status_filter
     elif not include_done:
         jql += " AND NOT (statusCategory = Done AND NOT (updated >= -2w))"
@@ -308,8 +317,8 @@ def main():
     parent_key = env["TRIAGE_PARENT_ISSUE_KEY"]
     output_path = env["TRIAGE_OUTPUT_PATH"]
 
-    if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", parent_key):
-        print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % parent_key)
+    if not re.match(r"\A[A-Z][A-Z0-9_]+-\d+\Z", parent_key, re.ASCII):
+        print("ERROR: TRIAGE_PARENT_ISSUE_KEY '%s' does not look like a valid Jira issue key" % parent_key, file=sys.stderr)
         sys.exit(1)
 
     # Fast path: regenerate index from cached per-issue JSON files
@@ -340,8 +349,8 @@ def main():
 
     # Step 1: Fetch issues
     if args.issue:
-        if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", args.issue):
-            print("ERROR: '%s' does not look like a valid Jira issue key" % args.issue)
+        if not re.match(r"\A[A-Z][A-Z0-9_]+-\d+\Z", args.issue, re.ASCII):
+            print("ERROR: '%s' does not look like a valid Jira issue key" % args.issue, file=sys.stderr)
             sys.exit(1)
         print("Fetching issue %s..." % args.issue, file=sys.stderr)
         raw_issues = fetch_single_issue(base_url, auth, args.issue)
@@ -361,7 +370,11 @@ def main():
 
     # Step 2: Save raw issue list
     if not args.dry_run:
+        if os.path.islink(COLLECT_DIR):
+            print("ERROR: %s is a symlink; refusing to use it." % COLLECT_DIR, file=sys.stderr)
+            sys.exit(1)
         os.makedirs(COLLECT_DIR, mode=0o700, exist_ok=True)
+        os.chmod(COLLECT_DIR, 0o700)  # repair perms if dir already existed with wider modes
         with open("/tmp/triage_collect_issues.json.tmp", "w") as f:
             json.dump([{"key": i.get("key", i.get("fields", {}).get("key", "")),
                         "summary": i.get("fields", {}).get("summary", "")}
