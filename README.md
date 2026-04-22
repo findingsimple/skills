@@ -18,6 +18,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
+| [support-ticket-triage-v2](support-ticket-triage-v2/) | `/support-ticket-triage-v2 <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
 | [vault-linker](vault-linker/) | `/vault-linker` | Add Obsidian `[[wiki links]]` to existing vault files by scanning for known entities (people, incidents, Jira keys) |
 
 ## Scheduled Execution
@@ -88,6 +89,12 @@ export SUPPORT_TEAM_FIELD_VALUES="TeamA,TeamB|TeamC"
 # Root cause triage
 export TRIAGE_BOARD_ID="731"
 export TRIAGE_PARENT_ISSUE_KEY="PROJ-1234"
+
+# Support ticket triage (support-ticket-triage-v2)
+export CODEBASE_PATH="/absolute/path/to/your/codebase"
+# Optional:
+export CODE_SEARCH_EXTENSIONS="rb,ts,tsx,go,py,js,jsx,rs,java"
+export ROOT_CAUSE_EPICS="PROJ-1234,PROJ-5678"
 
 # Incident KB
 export RETRO_PARENT_PAGE_ID="66895715"
@@ -267,6 +274,28 @@ Generates one team per run to keep context usage low. Run again for additional t
 **Prerequisites:**
 - `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and `SPRINT_TEAMS` in `~/.zshrc`
 - A Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens))
+
+### support-ticket-triage-v2
+
+Triage a single Jira support ticket end-to-end. Fetches the ticket, its linked issues, resolved look-alikes, and (optionally) tickets parented to designated root-cause epics. Then spawns a sub-agent that reads the cached bundle, investigates the local codebase, classifies the issue, and returns a filled Resolution Summary.
+
+Classifications:
+- 🐛 **Code Bug** — defect in existing code; cites exact file:line
+- 🚀 **PFR** — feature doesn't exist; describes what would need to be built
+- ⚙️ **Config Issue** — misconfigured DB record/flag/setting; cites exact table.column
+
+Every state-changing resolution step includes a `⚠️ SAFEGUARDS` block (before / implications / rollback) and a `[L2]` or `[ENG]` support-tier label.
+
+```bash
+/support-ticket-triage-v2 PROJ-123                     # triage a ticket
+/support-ticket-triage-v2 PROJ-123 --similar-limit 5   # fewer similar-ticket lookups
+```
+
+**Prerequisites:**
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `CODEBASE_PATH` in `~/.zshrc`
+- Optional: `SUPPORT_PROJECT_KEY` (scopes similar-ticket JQL), `ROOT_CAUSE_EPICS` (comma-separated Jira keys, validated against `^[A-Z][A-Z0-9_]+-\d+(,...)*$`), `CODE_SEARCH_EXTENSIONS`
+- Notion MCP server connected in Claude Code (optional — used only if `references/` in the codebase doesn't cover the affected area)
+- Read-only: the skill never writes to Jira
 
 ### vault-linker
 

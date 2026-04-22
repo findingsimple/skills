@@ -67,6 +67,12 @@ Each skill lives in its own directory with a `SKILL.md` file:
     jira_client.py      # Jira API client (load_env, auth, jira_get, jira_search_all)
     setup.py            # Validates env, discovers boards/sprints
     generate.py         # Fetches sprint report data, generates summary markdown
+  support-ticket-triage-v2/
+    SKILL.md            # Slash-only orchestration (parse args → fetch → delegate → return)
+    TEMPLATES.md        # Resolution Summary template (per-classification) + canonical SAFEGUARDS block
+    SYNTHESIS_PROMPT.md # Sub-agent prompt for code investigation, classification, and template fill
+    jira_client.py      # Jira API client (copied from sprint-pulse — load_env, init_auth, jira_get, jira_search_all, jira_get_comments, adf_to_text)
+    fetch.py            # Fetches ticket + linked + similar + root-cause-epic children → /tmp/triage_v2/<KEY>.json
   vault-linker/
     SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
     link.py             # Scans vault for entities, adds [[wiki links]] to existing files, generates index pages
@@ -123,9 +129,9 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `OBSIDIAN_VAULT_PATH` | retro-summary |
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
-| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
-| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
-| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage-v2 |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage-v2 |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage-v2 |
 | `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse |
 | `GITLAB_URL` | sprint-metrics, sprint-pulse |
 | `GITLAB_TOKEN` | sprint-metrics, sprint-pulse |
@@ -133,7 +139,9 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `TRIAGE_BOARD_ID` | root-cause-triage |
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
 | `TRIAGE_OUTPUT_PATH` | root-cause-triage |
-| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse |
+| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage-v2 |
+| `CODEBASE_PATH` | support-ticket-triage-v2 (absolute path to codebase for sub-agent investigation) |
+| `CODE_SEARCH_EXTENSIONS` | support-ticket-triage-v2 (optional; comma-separated file extensions, default `rb,ts,tsx,go,py,js,jsx,rs,java`) |
 | `SUPPORT_BOARD_ID` | sprint-pulse |
 | `SUPPORT_TEAM_LABEL` | sprint-pulse |
 | `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse |
@@ -141,3 +149,4 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `RETRO_TEMPLATE_PAGE_ID` | incident-kb |
 | `INC_PROJECT_KEY` | incident-kb |
 | `INCIDENT_KB_OUTPUT_PATH` | incident-kb |
+| `ROOT_CAUSE_EPICS` | support-ticket-triage-v2 (optional; comma-separated Jira keys) |
