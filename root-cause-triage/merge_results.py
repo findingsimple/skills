@@ -21,6 +21,8 @@ import os
 import re
 import sys
 
+from jira_client import ensure_tmp_dir
+
 
 ANALYSIS_PATH = "/tmp/triage_analysis.json"
 PROMPT_BASE = "/tmp/triage_prompts"
@@ -169,11 +171,7 @@ def merge_post_enrich(issues_by_key, post_results):
 
 def save_duplicates(dup_results):
     """Save A2c duplicate clusters to /tmp/triage_duplicates/clusters.json."""
-    if os.path.islink(DUPLICATES_DIR):
-        print("ERROR: %s is a symlink; refusing to use it." % DUPLICATES_DIR, file=sys.stderr)
-        sys.exit(1)
-    os.makedirs(DUPLICATES_DIR, mode=0o700, exist_ok=True)
-    os.chmod(DUPLICATES_DIR, 0o700)
+    ensure_tmp_dir(DUPLICATES_DIR)
 
     if isinstance(dup_results, dict):
         # Single batch — the results file contains the clusters directly

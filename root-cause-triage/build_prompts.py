@@ -23,23 +23,14 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from jira_client import ensure_tmp_dir
+
 
 ANALYSIS_PATH = "/tmp/triage_analysis.json"
 ENRICH_DIR = "/tmp/triage_enrich"
 AUTOFILL_DIR = "/tmp/triage_autofill"
 HISTORY_PATH = os.path.expanduser("~/.claude/skills/root-cause-triage/triage_history.json")
 PROMPT_BASE = "/tmp/triage_prompts"
-
-
-def _ensure_tmp_dir(path):
-    """Create a /tmp/ cache dir with 0o700, rejecting symlinks and repairing
-    loose perms on a pre-existing dir. `exist_ok=True` alone doesn't repair perms.
-    """
-    if os.path.islink(path):
-        print("ERROR: %s is a symlink; refusing to use it." % path, file=sys.stderr)
-        sys.exit(1)
-    os.makedirs(path, mode=0o700, exist_ok=True)
-    os.chmod(path, 0o700)
 
 
 def load_analysis():
@@ -209,7 +200,7 @@ def format_raw_issue(iss):
 
 def build_raw_quality(issues, batch_size):
     out_dir = os.path.join(PROMPT_BASE, "raw-quality")
-    _ensure_tmp_dir(out_dir)
+    ensure_tmp_dir(out_dir)
 
     history = load_history()
     history_section = build_history_section(history)
@@ -349,7 +340,7 @@ def format_post_enrich_issue(iss, enrichments, autofills):
 
 def build_post_enrich_quality(issues, batch_size):
     out_dir = os.path.join(PROMPT_BASE, "post-enrich-quality")
-    _ensure_tmp_dir(out_dir)
+    ensure_tmp_dir(out_dir)
 
     enrichments = load_enrichments()
     autofills = load_autofills()
@@ -436,7 +427,7 @@ Respond with a JSON array of clusters:
 
 def build_duplicates(issues):
     out_dir = os.path.join(PROMPT_BASE, "duplicates")
-    _ensure_tmp_dir(out_dir)
+    ensure_tmp_dir(out_dir)
 
     enrichments = load_enrichments()
     autofills = load_autofills()

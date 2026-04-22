@@ -13,7 +13,7 @@ import os
 import re
 import sys
 
-from jira_client import load_env
+from jira_client import load_env, ensure_tmp_dir
 
 
 ENV_KEYS = ["JIRA_BASE_URL", "TRIAGE_OUTPUT_PATH"]
@@ -120,11 +120,7 @@ def cmd_prepare(args):
         return
 
     # Create batches
-    if os.path.islink(ENRICH_DIR):
-        print("ERROR: %s is a symlink; refusing to use it." % ENRICH_DIR, file=sys.stderr)
-        sys.exit(1)
-    os.makedirs(ENRICH_DIR, mode=0o700, exist_ok=True)
-    os.chmod(ENRICH_DIR, 0o700)
+    ensure_tmp_dir(ENRICH_DIR)
     batch_size = args.batch_size
     batches = []
     for i in range(0, len(blocks), batch_size):

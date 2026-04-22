@@ -194,3 +194,15 @@ def jira_search_all(base_url, auth, jql, fields):
             break
 
     return issues
+
+
+def ensure_tmp_dir(path):
+    """Create a /tmp/ cache dir with 0o700, rejecting symlinks and repairing
+    loose perms on a pre-existing dir. `exist_ok=True` alone doesn't repair perms.
+    Shared across collect.py, enrich.py, autofill.py, merge_results.py, build_prompts.py.
+    """
+    if os.path.islink(path):
+        print("ERROR: %s is a symlink; refusing to use it." % path, file=sys.stderr)
+        sys.exit(1)
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    os.chmod(path, 0o700)

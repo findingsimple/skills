@@ -120,6 +120,25 @@ Full best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-
 - **Frontmatter tags for graph clustering** — skills that generate vault files should emit `tags:` in YAML frontmatter to create natural graph clusters via Obsidian's tag nodes (`showTags: true` in `graph.json`). Standard tags by file type: `[log]` for sync logs and automated output logs, `[ai-plan]` for Claude Code plans, `[incident]` for incidents (plus `sev/{level}` and `team-*` labels), `[root-cause]` for triage issues (plus classification tag e.g. `code-bug`, `feature-request`). Keep tags stable and categorical — avoid per-issue or high-cardinality tags.
 - **Escape Slack channel references** — Obsidian treats `#word` as a tag. Incident retro content from Confluence contains Slack channel names (e.g., `#monitoring-hub`). Wrap these in inline code backticks during content generation to prevent false tags. Pattern: `(?<=\s)(#[a-z][a-z0-9_-]+)` → `` `$1` ``.
 
+## Security Notes
+
+A cross-skill audit (April 2026) surfaced several classes of issue that were fixed across all skills. A few findings were deliberately NOT fixed and are documented here so a future session doesn't re-audit and re-flag them, and so anyone touching the code knows the current security posture.
+
+### Deliberately NOT fixed
+
+- **Vault output directories are not 0o700.** Obsidian vault paths (`OBSIDIAN_TEAMS_PATH`, `INCIDENT_KB_OUTPUT_PATH`, `TRIAGE_OUTPUT_PATH`) intentionally keep default perms so the user's normal file pickers, sync tools, and Obsidian itself can read them. See the "Restrictive `/tmp/` permissions" convention above — `mode=0o700` is only for `/tmp/` cache dirs.
+- **Per-file 0o600 not applied to `/tmp/` JSON bundles.** The cache directory is 0o700 (with chmod-repair on pre-existing dirs and symlink rejection), which already prevents other local users from listing or opening the files inside. Forcing every `json.dump` site to use `os.open(..., 0o600)` would be a large diff with marginal additional security. The one exception is `support-ticket-triage-v2/fetch.py` where bundle files receive 0o600 explicitly as belt-and-braces.
+- **Trusted-content regex parsers keep `^...$` anchors.** Patterns that parse filenames (`root-cause-triage/collect.py:242`, `vault-linker/link.py:56`), headings (`incident-kb/fetch.py:82`), or sprint names (`sprint-metrics/generate.py:19`) are not security boundaries — they run over content the skill itself generated or read from a local vault. The `\A...\Z` + `re.ASCII` upgrade was only applied where the regex validates untrusted input before JQL/URL interpolation.
+- **Broad `except Exception` sites left alone.** ~50 call sites across the fetch/sync scripts catch `Exception` and log-and-continue. This swallows programming errors (KeyError, TypeError) alongside HTTP failures, but narrowing every site would be invasive and risks behavioural changes to skills that are otherwise working. If you touch one of these paths for another reason, narrow the catch at that time.
+- **`_urlopen_with_retry` clients are duplicated across skills, not shared.** The same patch was applied to all 8 copies. The repo-level convention ("shared utilities are intentionally duplicated per skill") makes a central http-client module a non-goal. Future bug fixes here need to be replicated across every `*_client.py`.
+
+### Always fixed going forward
+
+- Env vars / CLI args interpolated into JQL or URL paths must be validated against an anchored regex (`\A...\Z` + `re.ASCII`) at the boundary, before any Jira/Confluence/GitLab call.
+- Sub-agent prompts that consume external-reporter content (descriptions, comments, ticket bodies) must include an untrusted-content security banner that forbids reads outside the skill directory and `/tmp/triage_*/`, forbids network exfil, and requires credential redaction in output.
+- `/tmp/` cache dirs use `mode=0o700`, reject symlinks, and `os.chmod(0o700)` after creation.
+- API client retry loops must terminate with an explicit `raise` (not an implicit `None` return) on exhausted retries, and must redact query strings in retry log lines.
+
 ## Environment Variables
 
 All environment variables are exported in `~/.zshrc`. Python scripts access them via `os.environ.get()`.

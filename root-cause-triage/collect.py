@@ -8,7 +8,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text
+from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text, ensure_tmp_dir
 
 
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "TRIAGE_BOARD_ID", "TRIAGE_PARENT_ISSUE_KEY", "TRIAGE_OUTPUT_PATH"]
@@ -55,7 +55,11 @@ def fetch_single_issue(base_url, auth, key):
     return [data]
 
 
-_STATUS_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _-]*\Z", re.ASCII)
+# Jira statuses can contain slashes (e.g. "In Review/QA"), colons (e.g.
+# "Blocked: External"), ampersands, dots, and apostrophes. Keep the charset
+# strict enough to block quote/paren-based JQL escapes while permitting
+# real-world status names.
+_STATUS_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _\-/:&.']*\Z", re.ASCII)
 
 
 def fetch_all_issues(base_url, auth, parent_key, status_filter=None, include_done=False):
@@ -370,11 +374,7 @@ def main():
 
     # Step 2: Save raw issue list
     if not args.dry_run:
-        if os.path.islink(COLLECT_DIR):
-            print("ERROR: %s is a symlink; refusing to use it." % COLLECT_DIR, file=sys.stderr)
-            sys.exit(1)
-        os.makedirs(COLLECT_DIR, mode=0o700, exist_ok=True)
-        os.chmod(COLLECT_DIR, 0o700)  # repair perms if dir already existed with wider modes
+        ensure_tmp_dir(COLLECT_DIR)
         with open("/tmp/triage_collect_issues.json.tmp", "w") as f:
             json.dump([{"key": i.get("key", i.get("fields", {}).get("key", "")),
                         "summary": i.get("fields", {}).get("summary", "")}

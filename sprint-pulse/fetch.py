@@ -18,8 +18,9 @@ from gitlab_client import load_gitlab_env, gitlab_get, gitlab_get_all, search_mr
 # JQL/URL interpolation.
 _NUMERIC_ID_RE = re.compile(r"\A\d+\Z", re.ASCII)
 _PROJECT_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
-# Jira labels: lowercase, digits, hyphen, underscore (no dots/spaces per Jira rules).
-_LABEL_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-]{0,63}\Z", re.ASCII)
+# Jira labels: alphanumeric + hyphen/underscore/dot (dots appear in some
+# real-world labels like "team.a"). No spaces, no JQL metacharacters.
+_LABEL_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-.]{0,63}\Z", re.ASCII)
 # Team field display names are human-facing but we scope to safe tokens for JQL.
 _TEAM_NAME_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _\-]{0,63}\Z", re.ASCII)
 

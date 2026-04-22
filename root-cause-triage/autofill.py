@@ -13,7 +13,7 @@ import os
 import re
 import sys
 
-from jira_client import load_env
+from jira_client import load_env, ensure_tmp_dir
 
 # Import scoring logic from analyze.py
 sys.path.insert(0, os.path.dirname(__file__))
@@ -236,11 +236,7 @@ def cmd_prepare(args):
         return
 
     # Create batches
-    if os.path.islink(AUTOFILL_DIR):
-        print("ERROR: %s is a symlink; refusing to use it." % AUTOFILL_DIR, file=sys.stderr)
-        sys.exit(1)
-    os.makedirs(AUTOFILL_DIR, mode=0o700, exist_ok=True)
-    os.chmod(AUTOFILL_DIR, 0o700)
+    ensure_tmp_dir(AUTOFILL_DIR)
     batch_size = args.batch_size
     batches = []
     for i in range(0, len(blocks), batch_size):
