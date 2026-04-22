@@ -1,5 +1,5 @@
 .DS_Store
-/.scratch
+.scratch/
 /.claude/worktrees
 triage_history.json
 schedules/*.plist

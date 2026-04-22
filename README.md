@@ -10,6 +10,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 
 | Skill | Command | Description |
 |-------|---------|-------------|
+| [bank-statement-to-markdown](bank-statement-to-markdown/) | `/bank-statement-to-markdown` | Convert St.George Bank PDF statements (Complete Freedom, Amplify Signature) into agent-friendly Markdown |
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
 | [incident-kb](incident-kb/) | `/incident-kb` | Build searchable Obsidian knowledge base from Confluence incident retros and Jira INC epics |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
@@ -66,6 +67,9 @@ export OBSIDIAN_TEAMS_PATH="$OBSIDIAN_VAULT_PATH/Teams"
 
 # Bonusly (bonusly-sync)
 export BONUSLY_API_TOKEN="your_token_here"
+
+# Bank statements (bank-statement-to-markdown)
+export STATEMENTS_PATH="/path/to/statements/folder"
 
 # Jira (sprint-summary, sprint-metrics, root-cause-triage, incident-kb)
 export JIRA_BASE_URL="https://your-instance.atlassian.net"
@@ -127,6 +131,20 @@ Skills expect a teams directory with this structure:
 ```
 
 ## Usage
+
+### bank-statement-to-markdown
+
+Converts St.George Bank PDF statements (Complete Freedom transaction accounts and Amplify Signature credit cards) into Markdown files with YAML frontmatter, an account summary, and a transaction table. Each PDF becomes a sibling `.md` file with the same base filename.
+
+```bash
+/bank-statement-to-markdown                                  # process all unprocessed PDFs in $STATEMENTS_PATH
+/bank-statement-to-markdown CompleteFreedom-XXXXXXXXX-26Mar2026.pdf  # single PDF (absolute or relative path)
+/bank-statement-to-markdown --dry-run                        # preview without writing
+/bank-statement-to-markdown --output-dir ~/review            # write to a review directory instead of $STATEMENTS_PATH
+```
+
+**Prerequisites:**
+- `STATEMENTS_PATH` in `~/.zshrc` pointing at the directory containing the PDFs
 
 ### bonusly-sync
 

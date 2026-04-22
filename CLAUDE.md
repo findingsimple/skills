@@ -16,6 +16,8 @@ Each skill lives in its own directory with a `SKILL.md` file:
 
 ```
 ~/.claude/skills/
+  bank-statement-to-markdown/
+    SKILL.md            # Skill definition (frontmatter + PDF extraction templates)
   bonusly-sync/
     SKILL.md            # Skill definition (frontmatter + prompt)
     bonusly_client.py   # Bonusly API client (load_env, get, paginated get)
@@ -161,6 +163,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `OBSIDIAN_VAULT_PATH` | retro-summary |
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
+| `STATEMENTS_PATH` | bank-statement-to-markdown |
 | `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage |
 | `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage |
 | `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, incident-kb, support-ticket-triage |
