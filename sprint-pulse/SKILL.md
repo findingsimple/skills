@@ -40,6 +40,19 @@ Uses existing vars from other sprint skills plus two new ones:
 | `SUPPORT_TEAM_LABEL` | No | Labels used on the support project to filter tickets by team. Pipe-delimited per team, matching `SPRINT_TEAMS` order. Each team slot can have multiple comma-separated labels (OR logic). Example: `label-a,label-b\|label-c` means team 0 matches tickets labelled `label-a` OR `label-b`, team 1 matches `label-c`. |
 | `SUPPORT_TEAM_FIELD_VALUES` | No | Values for the Team custom field (`cf[10600]`) to filter support tickets. Same pipe-delimited format as `SUPPORT_TEAM_LABEL`. Tickets matching **either** the label or the Team field are included. Example: `TeamA,TeamB\|TeamC`. |
 
+### Argument allow-lists (`fetch.py`)
+
+For JQL-injection safety, the following CLI args are validated against strict allow-lists before interpolation:
+
+| Arg | Allowed pattern | Notes |
+|-----|-----------------|-------|
+| `--board-id`, `--sprint-id` | `^\d+$` | Numeric only |
+| `--project-key`, `--support-project-key` | `^[A-Z][A-Z0-9_]+$` | Uppercase Jira project keys (2+ chars) |
+| `--support-label` | `^[A-Za-z0-9][A-Za-z0-9_\-.]{0,63}$` per comma-separated value | Dotted labels allowed (`team.a`); values that fail are dropped with a WARNING on stderr rather than aborting |
+| `--support-team-field` | `^[A-Za-z][A-Za-z0-9 _\-]{0,63}$` per comma-separated value | Human-readable team names; malformed values dropped with a WARNING |
+
+If you need to use a label or team-name containing a character outside these sets, either rename the Jira label or widen the pattern in `fetch.py` with an understanding of the JQL-injection implications.
+
 ## Architecture
 
 | File | Purpose |

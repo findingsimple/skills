@@ -14,6 +14,18 @@ Two modes for working with root cause tickets under the triage board:
 
 Uses `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` environment variables.
 
+### Argument allow-lists (`collect.py`, `analyze.py`)
+
+For JQL-injection safety, the following inputs are validated against strict allow-lists before interpolation:
+
+| Input | Allowed pattern | Notes |
+|-------|-----------------|-------|
+| `TRIAGE_PARENT_ISSUE_KEY` env | `^[A-Z][A-Z0-9_]+-\d+$` | Standard Jira issue key |
+| `--issue KEY` | `^[A-Z][A-Z0-9_]+-\d+$` | Same as above |
+| `--status STATUS` | `^[A-Za-z][A-Za-z0-9 _\-/:&.']*$` | Covers real-world statuses like `"In Review/QA"`, `"Blocked: External"` |
+
+If a board uses a status name with characters outside this set, widen `_STATUS_RE` in `collect.py` after auditing JQL-injection risk.
+
 ## Board Columns
 
 TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → REJECTED → COMPLETED / ROADMAPPED
