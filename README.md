@@ -18,7 +18,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
-| [support-ticket-triage-v2](support-ticket-triage-v2/) | `/support-ticket-triage-v2 <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
+| [support-ticket-triage](support-ticket-triage/) | `/support-ticket-triage <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
 | [vault-linker](vault-linker/) | `/vault-linker` | Add Obsidian `[[wiki links]]` to existing vault files by scanning for known entities (people, incidents, Jira keys) |
 
 ## Scheduled Execution
@@ -90,7 +90,7 @@ export SUPPORT_TEAM_FIELD_VALUES="TeamA,TeamB|TeamC"
 export TRIAGE_BOARD_ID="731"
 export TRIAGE_PARENT_ISSUE_KEY="PROJ-1234"
 
-# Support ticket triage (support-ticket-triage-v2)
+# Support ticket triage (support-ticket-triage)
 export CODEBASE_PATH="/absolute/path/to/your/codebase"
 # Optional:
 export CODE_SEARCH_EXTENSIONS="rb,ts,tsx,go,py,js,jsx,rs,java"
@@ -275,7 +275,7 @@ Generates one team per run to keep context usage low. Run again for additional t
 - `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_TEAMS_PATH`, Jira credentials, and `SPRINT_TEAMS` in `~/.zshrc`
 - A Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens))
 
-### support-ticket-triage-v2
+### support-ticket-triage
 
 Triage a single Jira support ticket end-to-end. Fetches the ticket, its linked issues, resolved look-alikes, and (optionally) tickets parented to designated root-cause epics. Then spawns a sub-agent that reads the cached bundle, investigates the local codebase, classifies the issue, and returns a filled Resolution Summary.
 
@@ -287,8 +287,8 @@ Classifications:
 Every state-changing resolution step includes a `⚠️ SAFEGUARDS` block (before / implications / rollback) and a `[L2]` or `[ENG]` support-tier label.
 
 ```bash
-/support-ticket-triage-v2 PROJ-123                     # triage a ticket
-/support-ticket-triage-v2 PROJ-123 --similar-limit 5   # fewer similar-ticket lookups
+/support-ticket-triage PROJ-123                     # triage a ticket
+/support-ticket-triage PROJ-123 --similar-limit 5   # fewer similar-ticket lookups
 ```
 
 **Prerequisites:**

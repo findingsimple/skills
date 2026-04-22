@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared Jira API client utilities for support-ticket-triage-v2 scripts."""
+"""Shared Jira API client utilities for support-ticket-triage scripts."""
 
 import json
 import os

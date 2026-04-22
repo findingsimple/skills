@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch a Jira support ticket + linked + similar issues for triage.
 
-Writes /tmp/triage_v2/<KEY>.json atomically. Stdout summary is terse so the
+Writes /tmp/support_triage/<KEY>.json atomically. Stdout summary is terse so the
 main Claude Code context stays lean; the sub-agent reads the JSON file
 directly via `cat`.
 """
@@ -23,7 +23,7 @@ from jira_client import (
     load_env,
 )
 
-CACHE_DIR = "/tmp/triage_v2"
+CACHE_DIR = "/tmp/support_triage"
 
 # Anchored with \A...\Z (re.ASCII) to reject trailing newlines and Unicode
 # lookalikes. Interpolated into JQL — bypasses here become injection.
