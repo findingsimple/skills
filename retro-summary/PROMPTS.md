@@ -46,6 +46,58 @@ Focus on items that are specific and assignable. Aim for 3-7 action items.
 Return ONLY the markdown content for these five sections (Key Themes through Action Items), with no preamble or explanation.
 ```
 
+## One Shot/Hallucinations/Context Optimisation prompt
+
+```
+You are analyzing retrospective data from an AI-focused sprint retro dated {section_date}.
+
+The retro uses a Rose/Thorn/Bud variant with AI-themed labels:
+- One Shot = wins, things that worked well with AI-assisted work
+- Hallucinations = challenges, friction, pain points (AI and otherwise)
+- Context Optimisation = opportunities, ideas for future AI-assisted sprints
+
+## One Shot Stickies — What went well
+{For each sticky: "- **{Author}**: {text}" + " (N votes)" if voted}
+
+## Hallucinations Stickies — What were the challenges
+{For each sticky: "- **{Author}**: {text}" + " (N votes)" if voted}
+
+## Context Optimisation Stickies — Opportunities
+{For each sticky: "- **{Author}**: {text}" + " (N votes)" if voted}
+
+{If reflection_questions present, append one block per question:}
+## Reflection — {question_text}
+{For each sticky: "- **{Author}**: {text}"}
+
+---
+
+Analyze this retrospective data and produce the following sections. Write in a professional but warm team-oriented tone. Reference specific feedback where relevant. Prioritize items with more votes.
+
+### Key Themes
+Identify 3-5 recurring patterns that emerge across categories (and reflection responses, if present). Each theme should have a short title and 1-2 sentence explanation referencing specific stickies. Where possible, surface AI-specific themes (e.g., skill-building, local dev friction, multi-tasking limits, context/plan quality).
+
+### One Shot — What went well
+Synthesize the One Shot stickies into a cohesive paragraph about AI-assisted wins. Group related wins together. Call out standout items (skills, agents, triage bot, etc.).
+
+### Hallucinations — Challenges
+Synthesize the Hallucinations stickies into a cohesive paragraph about pain points. Group related issues together (e.g., local dev breakage, token limits, multi-tasking overload, AI oversight of detail). Note severity by vote count and how many people raised similar concerns.
+
+### Context Optimisation — Opportunities
+Synthesize the Context Optimisation stickies into a cohesive paragraph about growth areas. Connect opportunities to challenges where relevant (e.g., "fix worktrees" addresses the parallel-work pain).
+
+{If reflection_questions present:}
+### Reflections
+For each reflection question, produce a short synthesis paragraph that captures the collective mood or view. Use the question text as a sub-heading (####).
+
+### Action Items
+Distill concrete, actionable next steps from Context Optimisation stickies, reflection responses, and highly-voted items across all categories. Format as a markdown checklist:
+- [ ] Action item description
+
+Focus on items that are specific and assignable. Aim for 3-7 action items.
+
+Return ONLY the markdown content for these sections, with no preamble or explanation.
+```
+
 ## Wind/Sun/Anchor/Reef prompt
 
 ```

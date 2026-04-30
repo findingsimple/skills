@@ -13,6 +13,7 @@ Extract retrospective data from a FigJam board, categorize stickies, synthesize 
 Supported retro formats:
 - **Rose/Thorn/Bud** — 3-column layout (Rose = strengths, Thorn = challenges, Bud = opportunities)
 - **Wind/Sun/Anchor/Reef** — 2×2 grid layout (Wind = helped us forward, Sun = made us feel good, Anchor = held us back, Reef = future risks)
+- **One Shot/Hallucinations/Context Optimisation** — AI-sprint variant of Rose/Thorn/Bud. Each category is its own top-level `<section>` on the board (One Shot = wins, Hallucinations = challenges, Context Optimisation = opportunities). Optionally includes a fourth `<section name="Reflection Questions">` containing nested sub-sections, each with a question header and free-response stickies.
 
 ## Instructions
 
@@ -54,9 +55,14 @@ Verify the teams path exists with `ls`. If it doesn't exist, stop and tell the u
 
 Call `mcp__figma__get_figjam` with the extracted `fileKey` and `nodeId`.
 
-If the nodeId is a page (`0:1`) or a top-level frame, the response will contain multiple `<section>` elements — one per retro session. Each section has a `name` attribute containing the retro date (e.g., "5 Nov 2025").
+The top-level `<section>` elements can represent two different board shapes — distinguish between them:
 
-If the nodeId points to a specific section, the response will contain just that section's stickies.
+- **Multi-session board** (Rose/Thorn/Bud, Wind/Sun/Anchor/Reef): each top-level `<section>` is one retro session, and the section `name` encodes the date (e.g., "5 Nov 2025"). The categories (Rose, Thorn, Bud, etc.) live as `<text>` column headers *inside* each session section.
+- **Single-retro board** (One Shot/Hallucinations/Context Optimisation): the top-level `<section>` elements *are* the categories. There is no date encoded in the board; ask the user for the sprint/retro date. A "Reflection Questions" section (if present) contains nested sub-sections — one per reflection prompt.
+
+Detect the shape from the section names: if the top-level sections match known category keywords (`One Shot`, `Hallucinations`, `Context Optimisation`, `Reflection Questions`), treat as a single-retro board. Otherwise assume multi-session.
+
+If the nodeId points to a specific section on a multi-session board, the response contains just that session's stickies.
 
 **Resolve team name** (used for the output path):
 
@@ -113,10 +119,11 @@ The main agent resumes from **Step 5** once the sub-agent completes.
 
 #### 4a — Detect retro template
 
-Scan the section data for `<text>` elements to identify which template the board uses:
+Identify which template the board uses by inspecting top-level `<section>` names first, falling back to `<text>` column headers:
 
-- If headers containing **"Rose"**, **"Thorn"**, and **"Bud"** are found → **rose-thorn-bud** template
-- If headers containing **"Wind"**, **"Sun"**, **"Anchor"**, and **"Reef"** are found → **wind-sun-anchor-reef** template
+- Top-level sections named **"One Shot"**, **"Hallucinations"**, **"Context Optimisation"** (optionally plus **"Reflection Questions"**) → **one-shot-hallucinations-context** template
+- `<text>` headers containing **"Rose"**, **"Thorn"**, and **"Bud"** → **rose-thorn-bud** template
+- `<text>` headers containing **"Wind"**, **"Sun"**, **"Anchor"**, and **"Reef"** → **wind-sun-anchor-reef** template
 
 Record the detected template — it controls how stickies are categorized (Step 4c) and the output format (Steps 5–7).
 
@@ -145,6 +152,12 @@ Record each header's x-coordinate. Use sticky color as the **primary** indicator
 
   **Why nearest-header instead of midpoints:** Rose stickies consistently extend well past the Rose/Thorn midpoint because the Rose column is wide. Using nearest-header naturally handles this.
 
+**For one-shot-hallucinations-context template** (category-per-top-level-section layout):
+
+Category is determined by the containing `<section>`. Each sticky inherits its parent section's category name (`One Shot`, `Hallucinations`, `Context Optimisation`). No proximity logic needed.
+
+If a **"Reflection Questions"** top-level section is present, recurse into its nested `<section>` children. Each nested section has a `<text>` question header and its own stickies. Parse these into a `reflection_questions` array in the output JSON: `[{"question": "...", "stickies": [{"author": "...", "text": "..."}]}]`. Preserve the order of nested sections.
+
 **For wind-sun-anchor-reef template** (2×2 grid layout):
 
 Record each header's x **and** y coordinates. Assign each sticky to the nearest header using **2D Euclidean distance**: `sqrt((sx - hx)² + (sy - hy)²)`. The header with the smallest distance wins.
@@ -158,6 +171,8 @@ Category meanings:
 #### 4d — Count votes
 
 Look for `<stamp>` and `<instance>` elements near each sticky (within ~200px proximity). **Deduplicate by type**: if the same stamp/instance type appears multiple times near a sticky (e.g., 3 "Thumbs up"), count it as **1 vote**. Each unique reaction type counts as 1 vote. Record the total unique vote count per sticky.
+
+**Known limitation:** `mcp__figma__get_figjam` does NOT surface emoji reactions, the `+1` sticker, thumbs-up, heart, or star stamps — only a subset of `<instance>` elements (and typically none of the `<stamp>` variants at all). If the board visibly uses voting, ask the user to export the board as PDF so votes can be read via Read-the-PDF, then overlay the vote counts onto the parsed JSON. Do not report "low vote activity" based on the MCP response alone.
 
 ### Step 5 — Present extracted data
 

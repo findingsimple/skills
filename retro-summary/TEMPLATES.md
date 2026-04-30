@@ -50,6 +50,66 @@ participants: ["[[{author1}]]", "[[{author2}]]", ...]
 - **[[{Author}]]**: {text}
 ```
 
+## One Shot/Hallucinations/Context Optimisation template
+
+```markdown
+---
+date: {YYYY-MM-DD}
+team: "[[{team_name}]]"
+type: retro
+format: one-shot-hallucinations-context
+source: {figma_url}
+generated_at: {ISO 8601 UTC timestamp}
+participants: ["[[{author1}]]", "[[{author2}]]", ...]
+---
+
+# Retro — {display_date} (AI Sprint)
+
+## Summary
+
+{Key Themes section from agent synthesis}
+
+## Possible Action Items
+
+{Action Items checklist from agent synthesis}
+
+## One Shot (What Went Well)
+
+{One Shot synthesis paragraph}
+
+### Raw Feedback
+{For each One Shot sticky:}
+- **[[{Author}]]**: {text}
+
+## Hallucinations (Challenges)
+
+{Hallucinations synthesis paragraph}
+
+### Raw Feedback
+{For each Hallucinations sticky:}
+- **[[{Author}]]**: {text}
+
+## Context Optimisation (Opportunities)
+
+{Context Optimisation synthesis paragraph}
+
+### Raw Feedback
+{For each Context Optimisation sticky:}
+- **[[{Author}]]**: {text}
+
+{If reflection_questions present, append this section:}
+## Reflections
+
+{Reflections synthesis from agent}
+
+{For each reflection question:}
+### {question_text}
+
+#### Raw Feedback
+{For each reflection sticky:}
+- **[[{Author}]]**: {text}
+```
+
 ## Wind/Sun/Anchor/Reef template
 
 ```markdown
