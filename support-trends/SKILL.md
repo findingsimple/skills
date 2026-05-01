@@ -252,6 +252,24 @@ Display-only formatting cutoffs (small-base markers, concentration call-outs) li
 
 A finding kind with no prior-window data available (e.g. when `--no-prior` was passed) silently skips its check rather than firing on incomplete data.
 
+## Narrative notes (the pressure-release valve)
+
+Not every useful sentence in the report is a finding. Sometimes the right thing to add is a single line of *context* — "this window overlaps the late-December office-closure period, expect lower volume" — which has no metric, no `evidence_keys`, and doesn't fit the finding taxonomy.
+
+`narrative_notes.py` is the escape hatch. Each note carries explicit `derived_from` provenance, ships in `analysis.json` alongside `findings`, and renders as italic prose under a `## Context` block at the top of the Findings section.
+
+**When to add a new note generator** (in `narrative_notes.py`):
+- A recurring kind of contextual line you'd want every report to consider, not a one-off observation.
+- Has no metric to anchor — if it has a metric, it's a finding kind, add it to `analyze.derive_findings()` instead.
+- Cheap to compute deterministically — if it needs an LLM, it belongs in a sub-agent, not here.
+
+**When NOT to add a note generator**: one-off observations belong in the synthesise agent's `so_what` for the relevant finding. The narrative-notes file is for *patterns* the report should always consider.
+
+Currently shipped generators:
+- `_calendar_context_notes` — fires when current OR prior window overlaps Dec 22 – Jan 5 (US/AU office-closure period). Distinguishes "current is depressed" from "prior was depressed → growth comparisons may overstate the shift".
+
+The synthesise agent sees `narrative_notes` and may reference them in `so_what` to qualify confidence — but is told not to restate them as findings (the renderer already shows them).
+
 ## Failure modes
 
 - **Sub-agent timeout / failure**: section omitted with `[unavailable]` notice; rest of report renders.

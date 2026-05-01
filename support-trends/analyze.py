@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import thresholds
 from jira_client import ensure_tmp_dir, atomic_write_json
+from narrative_notes import derive_narrative_notes
 
 
 CACHE_DIR = "/tmp/support_trends"
@@ -1525,12 +1526,14 @@ def main():
         }
 
     findings = derive_findings(current_analysis, prior_analysis, deltas)
+    narrative_notes = derive_narrative_notes(current_analysis, prior_analysis, deltas)
 
     out = {
         "current": current_analysis,
         "prior": prior_analysis,
         "deltas": deltas,
         "findings": findings,
+        "narrative_notes": narrative_notes,
     }
     ensure_tmp_dir(CACHE_DIR)
     atomic_write_json(os.path.join(CACHE_DIR, "analysis.json"), out)
@@ -1549,6 +1552,7 @@ def main():
             ("%+.1f" % deltas["totals"]["created_pct"]) if deltas["totals"]["created_pct"] is not None else "n/a",
         ))
     summary_bits.append("Findings: %d" % len(findings))
+    summary_bits.append("Notes: %d" % len(narrative_notes))
     print(" | ".join(summary_bits))
     if findings:
         print()

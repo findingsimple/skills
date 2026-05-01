@@ -37,6 +37,7 @@ cat /tmp/support_trends/support_feedback/results.json  # may not exist if that a
 - `findings` — pre-crystallised structured findings emitted by `analyze.derive_findings()`. Schema: `{kind, claim, metric, evidence_keys, severity, audience_hint, ...extras}`. **You are free to surface a finding from this list verbatim, drop it, or rephrase its `claim` for clarity — but its `metric` and `evidence_keys` are factual and must not be changed.**
 - `themes` (when present) — vocabulary + per-ticket records. Use to spot themes that grew, shrank, or are new.
 - `support_feedback` (when present) — `{charter_drift: [...], l2_containment_signals: [...], categorisation_quality: [...]}`. Each entry has `ticket_keys` you can cite.
+- `narrative_notes` (when present) — short calendar / baseline context lines (e.g. "Window overlaps the late-December office-closure period"). These are NOT findings — they're framing the report renders separately. **You may reference them in a `so_what`** to qualify confidence ("…but prior baseline was depressed by holiday closures, so confirm in May") but **do not** restate them as findings — that would duplicate context the renderer is already showing.
 
 ---
 

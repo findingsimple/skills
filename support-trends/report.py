@@ -113,8 +113,23 @@ def render_findings_section(analysis, base_url):
     Source priority:
       1. analysis['synthesise']['findings'] — the schema-locked, agent-selected list
       2. fallback: analysis['findings'] grouped by audience_hint=exec
+
+    A `## Context` sub-section sits above the bullets when narrative_notes
+    are present — calendar / baseline framing the reader needs *before*
+    interpreting the findings. Notes have explicit provenance via the
+    `derived_from` field even though we don't render that.
     """
     out = ["# Findings\n"]
+
+    notes = analysis.get("narrative_notes") or []
+    if notes:
+        out.append("## Context\n")
+        for note in notes:
+            text = (note.get("text") or "").strip()
+            if text:
+                out.append("- _%s_\n" % _escape_table_cell(text))
+        out.append("")
+
     syn = (analysis.get("synthesise") or {}).get("findings") or []
     if syn:
         # Exec-audience findings render under Findings; support-audience under
