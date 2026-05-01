@@ -229,6 +229,28 @@ tags: [support-trends]
 
 No section emits prose beyond `so_what` lines from the synthesise agent. Number tables are direct renders of `analysis.json`.
 
+## Tuning thresholds
+
+All deterministic findings emitted by `analyze.derive_findings()` read their trigger constants from `thresholds.py`. Each finding kind has its own dict — edit the values to make findings fire more or less often, no other code changes needed.
+
+| Finding kind | Threshold dict | What it tunes |
+|---|---|---|
+| `volume_change` | `thresholds.VOLUME_CHANGE` | `pct` (% MoM change), `abs` (current-window count floor), `severity_high` (high-severity break) |
+| `volume_spike_by_component` | `thresholds.COMPONENT_SPIKE` | `pct`, `abs`, `prior_floor` |
+| `defect_rate_change` | `thresholds.DEFECT_RATE` | `pp` (share-shift), `abs_delta`, `abs_floor` |
+| `priority_mix_shift` | `thresholds.PRIORITY_MIX` | `pp`, `abs_floor` |
+| `time_to_engineer_regression` | `thresholds.TIME_TO_ENGINEER` | `pct`, `abs_floor_hours` |
+| `reopen_spike` | `thresholds.REOPEN` | `pp`, `abs` |
+| `quick_close_pattern` | `thresholds.QUICK_CLOSE` | `pp`, `abs` |
+| `reassign_out_burst` | `thresholds.REASSIGN_OUT` | `abs`, `severity_high` |
+| `never_do_rate` | `thresholds.NEVER_DO` | `ratio` (multiple of prior count), `abs` |
+| `categorisation_blank` | `thresholds.CATEGORISATION_BLANK` | `pct` (share of resolved-in-window), `abs_resolved_floor`, `severity_high` |
+| `l3_bounced_back` | `thresholds.L3_BOUNCED` | `abs`, `severity_high` |
+
+Display-only formatting cutoffs (small-base markers, concentration call-outs) live in `thresholds.DISPLAY` — these affect the renderer, not whether a finding fires.
+
+A finding kind with no prior-window data available (e.g. when `--no-prior` was passed) silently skips its check rather than firing on incomplete data.
+
 ## Failure modes
 
 - **Sub-agent timeout / failure**: section omitted with `[unavailable]` notice; rest of report renders.
