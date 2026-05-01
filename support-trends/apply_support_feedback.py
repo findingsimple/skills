@@ -20,6 +20,7 @@ import os
 import re
 import sys
 
+import concurrency
 from jira_client import atomic_write_json
 
 
@@ -115,6 +116,10 @@ def _validate_categorisation(rec, valid_keys):
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     results = _load_json(RESULTS_PATH)
     if results is None:
         print("WARNING: %s missing — sub-agent likely failed; report will render without support-feedback section." % RESULTS_PATH, file=sys.stderr)

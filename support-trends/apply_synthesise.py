@@ -22,6 +22,7 @@ import os
 import re
 import sys
 
+import concurrency
 from jira_client import atomic_write_json
 
 
@@ -96,6 +97,10 @@ def _validate_finding(rec, valid_keys):
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     results = _load_json(RESULTS_PATH)
     if results is None:
         print("WARNING: %s missing — synthesise sub-agent likely failed; report will fall back to raw analysis findings." % RESULTS_PATH, file=sys.stderr)

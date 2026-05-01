@@ -17,6 +17,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
+import concurrency
 from jira_client import ensure_tmp_dir, atomic_write_json
 from ticket_record import ticket_record, untrusted
 
@@ -161,6 +162,10 @@ def _build_ticket_records(raw_tickets):
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     setup = _load_json(os.path.join(CACHE_DIR, "setup.json"))
     if setup is None:
         print("ERROR: setup.json missing — run setup.py first.", file=sys.stderr)

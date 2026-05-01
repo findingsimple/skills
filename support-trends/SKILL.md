@@ -290,6 +290,21 @@ Currently shipped generators:
 
 The synthesise agent sees `narrative_notes` and may reference them in `so_what` to qualify confidence — but is told not to restate them as findings (the renderer already shows them).
 
+## Concurrency & session model
+
+The pipeline is many separately-invoked Python scripts sharing `/tmp/support_trends/`. Three layers of protection prevent state corruption:
+
+1. **Advisory lock** (`concurrency.acquire` / `release`) — held setup→report. A second orchestrator run started while one is in flight gets a clear "another run in progress" error rather than silently clobbering files. Auto-reclaimed after 4 hours of staleness (a single sub-agent has occasionally run that long).
+
+2. **Session token** (`concurrency.verify_session`) — `setup.py` generates a UUID, writes it into both the lock file (4th `|`-delimited field) and `setup.json.session`. Every mid-pipeline script (`fetch`, `analyze`, `bundle`, `apply_themes`, `apply_support_feedback`, `apply_synthesise`, `report`) calls `verify_session()` at the top of `main()` and refuses to proceed if the lock is missing, stale, or its session UUID doesn't match `setup.json`. This catches three foot-guns:
+   - Running an intermediate script standalone (no orchestrator → no lock → refuse).
+   - Re-running an intermediate script after the lock auto-reclaimed mid-pipeline (session mismatch → refuse).
+   - Cross-team bleed where Team B's lock somehow got paired with Team A's stale `setup.json` (session mismatch → refuse).
+
+3. **Stale-state clear** (`concurrency.clear_stale_state`) — `setup.py` calls this immediately after `acquire()` succeeds, removing the previous run's `bundle.json`, `analysis.json`, `data*.json`, `report.md`, and the `themes/` / `support_feedback/` / `synthesise/` subdirectories. Without this, two consecutive runs share `/tmp/`. If Team B's themes sub-agent crashes before writing `results.json`, `apply_themes` would otherwise pick up Team A's leftover `results.json` and merge it into Team B's `analysis.json`. Validators reject hallucinated keys but two teams sharing a project (label-distinguished) can have overlapping in-window keys that bleed through silently. **Kept across runs**: the lock itself, `.jql_changed_predicate` cache, themes vocabulary (per-team).
+
+The `report.py` step releases the lock in a `try/finally` so every exit path (success, `--dry-run`, missing `OBSIDIAN_TEAMS_PATH`) cleans up — no 4-hour wait required.
+
 ## Failure modes
 
 - **Sub-agent timeout / failure**: section omitted with `[unavailable]` notice; rest of report renders.

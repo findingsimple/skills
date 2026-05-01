@@ -15,6 +15,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
+import concurrency
 import thresholds
 from jira_client import ensure_tmp_dir, atomic_write_json
 from narrative_notes import derive_narrative_notes
@@ -1445,6 +1446,10 @@ def derive_findings(current, prior, deltas):
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     p = argparse.ArgumentParser()
     p.add_argument("--bucket", default="auto", help="daily|weekly|monthly|auto (default auto)")
     args = p.parse_args()

@@ -456,6 +456,11 @@ def main():
                    help="Print to stdout + /tmp; do not write to the vault.")
     args = p.parse_args()
 
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
+
     setup = _load(os.path.join(CACHE_DIR, "setup.json"))
     if setup is None:
         print("ERROR: setup.json missing — run setup.py first.", file=sys.stderr)

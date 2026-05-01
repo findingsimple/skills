@@ -27,6 +27,7 @@ import sys
 from collections import defaultdict
 from datetime import date, datetime, timezone
 
+import concurrency
 from jira_client import atomic_write_json
 from analyze import _safe_delta_pct
 
@@ -221,6 +222,10 @@ def _merge_and_age_hint(existing, this_run_vocab, today_iso):
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     try:
         with open(RESULTS_PATH) as f:
             results = json.load(f)

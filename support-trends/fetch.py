@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import concurrency
 from jira_client import (
     load_env, init_auth, jira_get, jira_search_all,
     jira_get_changelog, jira_get_comments, jira_get_dev_summary, adf_to_text,
@@ -627,6 +628,10 @@ def fetch_window(args, base_url, auth, team_clause, team_uuids, start, end, outp
 
 
 def main():
+    ok, msg = concurrency.verify_session()
+    if not ok:
+        print("ERROR: " + msg, file=sys.stderr)
+        sys.exit(2)
     args = parse_args()
 
     _require_match(_VAULT_DIR_RE, args.team_vault_dir, "--team-vault-dir")

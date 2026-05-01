@@ -150,11 +150,17 @@ def main():
     # the lock prevents two pipelines from clobbering each other's intermediate
     # state. report.py releases on success; otherwise the 4h staleness cutoff
     # in concurrency.py reclaims a crashed run.
-    acquired, lock_msg = concurrency.acquire(None)
+    acquired, lock_msg, session = concurrency.acquire(None)
     if not acquired:
         print("ERROR: " + lock_msg, file=sys.stderr)
         sys.exit(1)
     print(lock_msg, file=sys.stderr)
+    # Wipe stale intermediate files from any previous run *immediately* after
+    # acquire — before any writes — so the freshly-locked window of work has
+    # no chance of inheriting Team A's leftover bundle/results/data.
+    n = concurrency.clear_stale_state()
+    if n:
+        print("Cleared %d stale cache file(s) from prior run." % n, file=sys.stderr)
 
     base_url, auth = init_auth(env)
     teams_path = env["OBSIDIAN_TEAMS_PATH"]
@@ -271,6 +277,13 @@ def main():
 
     ensure_tmp_dir(CACHE_DIR)
     setup_data = {
+        # Session token from concurrency.acquire(). Mid-pipeline scripts call
+        # concurrency.verify_session() which compares this to the lock file's
+        # session field — refusing to proceed on mismatch protects against
+        # standalone foot-gun runs (e.g. someone running bundle.py outside an
+        # orchestrator) and against running an intermediate script after the
+        # lock auto-reclaimed mid-pipeline.
+        "session": session,
         "env": {
             "teams_path": teams_path,
             "base_url": base_url,
