@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 from jira_client import ensure_tmp_dir, atomic_write_json
 from ticket_record import ticket_record, untrusted
@@ -34,6 +35,11 @@ MAX_TICKETS_TOTAL = 200  # safety cap — typical windows are 30–100
 LEGACY_VOCAB_HINT_PATH = os.path.join(CACHE_DIR, "themes_vocabulary.json")
 VOCAB_HINT_RELATIVE = os.path.join("Support", "Trends", ".themes_vocabulary.json")
 _VAULT_DIR_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-]{0,63}\Z", re.ASCII)
+# CHARTER_TEAMS values land in bundle.json as trusted strings (the
+# support-feedback prompt instructs the agent to "prefer naming a
+# suggested_team from that list"). Anchor + ASCII-only to keep newlines /
+# null bytes / shell metachars out of the agent context.
+_CHARTER_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9 _\-]{0,63}\Z", re.ASCII)
 
 
 def _load_json(path):
@@ -98,14 +104,19 @@ def _charters(setup):
         parts = [p.strip() for p in slot.split(",") if p.strip()]
         if not parts:
             continue
-        out.append({"canonical": parts[0], "aliases": parts[1:]})
+        validated = [p for p in parts if _CHARTER_NAME_RE.match(p)]
+        dropped = [p for p in parts if p not in validated]
+        if dropped:
+            print("WARNING: CHARTER_TEAMS dropped malformed name(s) %r" % dropped, file=sys.stderr)
+        if not validated:
+            continue
+        out.append({"canonical": validated[0], "aliases": validated[1:]})
     return out
 
 
 def _in_window_tickets(data, start, end):
     """Filter normalised tickets to those created in the [start, end] inclusive
     window. Date strings are 'YYYY-MM-DD'."""
-    from datetime import datetime, timezone
     start_dt = datetime.fromisoformat(start + "T00:00:00").replace(tzinfo=timezone.utc)
     end_dt = datetime.fromisoformat(end + "T23:59:59").replace(tzinfo=timezone.utc)
     out = []
@@ -123,6 +134,30 @@ def _in_window_tickets(data, start, end):
         if start_dt <= cdt <= end_dt:
             out.append(t)
     return out[:MAX_TICKETS_TOTAL]
+
+
+def _window_days(start, end):
+    """Inclusive day count between two YYYY-MM-DD strings."""
+    return (
+        datetime.fromisoformat(end).toordinal()
+        - datetime.fromisoformat(start).toordinal()
+        + 1
+    )
+
+
+def _build_ticket_records(raw_tickets):
+    """Build per-ticket records for the bundle. Themes agent reads
+    `description_snippet` (300 chars) — derive it from the already-trimmed
+    `description.text`. Single source of truth: the full description lives in
+    `rec["description"]`; the snippet is a presentation slice for the themes
+    agent. Both are wrapped untrusted."""
+    records = []
+    for t in raw_tickets:
+        rec = ticket_record(t)
+        desc_full = (rec.get("description") or {}).get("text", "")
+        rec["description_snippet"] = untrusted(desc_full[:300])
+        records.append(rec)
+    return records
 
 
 def main():
@@ -146,39 +181,22 @@ def main():
         print("ERROR: setup.json window missing start/end.", file=sys.stderr)
         sys.exit(2)
 
-    cur_in_window = _in_window_tickets(data, start, end)
-    current_tickets = []
-    for t in cur_in_window:
-        rec = ticket_record(t)
-        # Themes agent reads `description_snippet` (300 chars) — derive it from
-        # the already-trimmed `description.text`. Single source of truth: the
-        # full description lives in `rec["description"]`; the snippet is a
-        # presentation slice for the themes agent. Both are wrapped untrusted.
-        desc_full = (rec.get("description") or {}).get("text", "")
-        rec["description_snippet"] = untrusted(desc_full[:300])
-        current_tickets.append(rec)
+    current_tickets = _build_ticket_records(_in_window_tickets(data, start, end))
 
     # Prior tickets (themes vocabulary continuity). Keep the ticket_record
     # contract identical so the agent doesn't see a different shape per window.
     prior_tickets = []
-    prior_data = _load_json(os.path.join(CACHE_DIR, "data_prior.json"))
     prior_window = None
+    prior_data = _load_json(os.path.join(CACHE_DIR, "data_prior.json"))
     if prior_data is not None and window.get("prior_start"):
-        prior_in_window = _in_window_tickets(
-            prior_data, window["prior_start"], window["prior_end"])
-        for t in prior_in_window:
-            rec = ticket_record(t)
-            desc_full = (rec.get("description") or {}).get("text", "")
-            rec["description_snippet"] = untrusted(desc_full[:300])
-            prior_tickets.append(rec)
+        prior_start = window["prior_start"]
+        prior_end = window["prior_end"]
+        prior_tickets = _build_ticket_records(
+            _in_window_tickets(prior_data, prior_start, prior_end))
         prior_window = {
-            "start": window["prior_start"],
-            "end": window["prior_end"],
-            "days": (
-                __import__("datetime").datetime.fromisoformat(window["prior_end"]).toordinal()
-                - __import__("datetime").datetime.fromisoformat(window["prior_start"]).toordinal()
-                + 1
-            ),
+            "start": prior_start,
+            "end": prior_end,
+            "days": _window_days(prior_start, prior_end),
         }
 
     teams = setup.get("teams") or []
@@ -190,11 +208,7 @@ def main():
         "current_window": {
             "start": start,
             "end": end,
-            "days": (
-                __import__("datetime").datetime.fromisoformat(end).toordinal()
-                - __import__("datetime").datetime.fromisoformat(start).toordinal()
-                + 1
-            ),
+            "days": _window_days(start, end),
         },
         "prior_window": prior_window,
         "current_tickets": current_tickets,

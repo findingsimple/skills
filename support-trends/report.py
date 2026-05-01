@@ -195,13 +195,20 @@ def render_findings_section(analysis, base_url):
     return "\n".join(out)
 
 
-def _render_finding_bullet(f, base_url):
+def _finding_preamble(f, base_url):
+    """Shared shape for both synthesise and raw-fallback finding bullets:
+    claim, optional metric, key-link list. Returns (claim, metric_part, keys)."""
     claim = _escape_table_cell(f.get("claim", ""))
     metric = f.get("metric", "")
-    keys = _key_links(f.get("evidence_keys", []), base_url)
-    so_what = (f.get("so_what") or "").strip()
-    confidence = f.get("confidence", "medium")
     metric_part = " (`%s`)" % metric if metric else ""
+    keys = _key_links(f.get("evidence_keys", []), base_url)
+    return claim, metric_part, keys
+
+
+def _render_finding_bullet(f, base_url):
+    claim, metric_part, keys = _finding_preamble(f, base_url)
+    confidence = f.get("confidence", "medium")
+    so_what = (f.get("so_what") or "").strip()
     line = "- **%s**%s _(%s)_ — %s" % (claim, metric_part, confidence, keys)
     if so_what:
         line += "\n  → %s" % _escape_table_cell(so_what)
@@ -211,11 +218,8 @@ def _render_finding_bullet(f, base_url):
 def _render_raw_finding_bullet(f, base_url):
     """Rendering for the synthesise-fallback path. Shows the raw deterministic
     finding without `so_what` (since no agent ran to write one)."""
-    claim = _escape_table_cell(f.get("claim", ""))
-    metric = f.get("metric", "")
-    keys = _key_links(f.get("evidence_keys", []), base_url)
+    claim, metric_part, keys = _finding_preamble(f, base_url)
     severity = f.get("severity", "medium")
-    metric_part = " (`%s`)" % metric if metric else ""
     line = "- **%s**%s _(severity %s)_" % (claim, metric_part, severity)
     if keys:
         line += " — %s" % keys
@@ -312,13 +316,19 @@ def render_numbers_section(analysis, base_url):
         qc = l1.get("quick_close") or {}
         ro = l1.get("reassign_out") or {}
         wd = l1.get("wont_do") or {}
-        rate_pct = lambda r: ("%.0f%%" % (r * 100)) if r is not None else "—"
+
+        def hours(v):
+            return "%.1fh" % v if v is not None else "—"
+
+        def rate_pct(r):
+            return "%.0f%%" % (r * 100) if r is not None else "—"
+
         out.append("| Signal | Value |")
         out.append("|---|---|")
-        out.append("| Median time-to-first-engineer (adjusted hours) | %s |" % (
-            ("%.1fh" % fa.get("median_adjusted_hours")) if fa.get("median_adjusted_hours") is not None else "—"))
-        out.append("| p90 time-to-first-engineer (adjusted hours) | %s |" % (
-            ("%.1fh" % fa.get("p90_adjusted_hours")) if fa.get("p90_adjusted_hours") is not None else "—"))
+        out.append("| Median time-to-first-engineer (adjusted hours) | %s |"
+                   % hours(fa.get("median_adjusted_hours")))
+        out.append("| p90 time-to-first-engineer (adjusted hours) | %s |"
+                   % hours(fa.get("p90_adjusted_hours")))
         out.append("| Tickets never assigned to an engineer | %d |" % fa.get("never_assigned_count", 0))
         out.append("| Reopen count / rate | %d / %s |" % (reopen.get("count", 0), rate_pct(reopen.get("rate"))))
         out.append("| Quick-close count / rate | %d / %s |" % (qc.get("count", 0), rate_pct(qc.get("rate"))))
@@ -350,13 +360,17 @@ def render(setup, analysis):
     label = window.get("label", "%s_to_%s" % (start, end))
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    days = 0
     try:
         d_start = datetime.strptime(start, "%Y-%m-%d").date()
         d_end = datetime.strptime(end, "%Y-%m-%d").date()
         days = (d_end - d_start).days + 1
-    except (ValueError, TypeError):
-        pass
+    except (ValueError, TypeError) as e:
+        # setup.py validates window dates with anchored regex + datetime
+        # round-trip before writing setup.json, so reaching here means the
+        # cache file is corrupted. Better to fail loud than render "0 days".
+        raise ValueError(
+            "report.py: window dates failed to parse (start=%r end=%r): %s. "
+            "Re-run setup.py to regenerate setup.json." % (start, end, e))
 
     body_parts = [
         "---",

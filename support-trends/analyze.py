@@ -1140,6 +1140,11 @@ def _arrow(prior, current):
     return "%d → %d" % (prior, current)
 
 
+def _evidence_from_items(items, limit=20):
+    """Pull evidence keys from a list of l1-signal item dicts (each has a `key`)."""
+    return [it.get("key", "") for it in (items or [])][:limit]
+
+
 def derive_findings(current, prior, deltas):
     """Walk the deterministic outputs and emit a list of finding records.
 
@@ -1305,12 +1310,11 @@ def derive_findings(current, prior, deltas):
         prior_qc_rate = (prior_qc.get("rate") or 0) * 100
         pp = cur_qc_rate - prior_qc_rate
         if pp >= cfg["pp"]:
-            evidence = [it.get("key", "") for it in (cur_qc.get("items") or [])][:20]
             findings.append(_finding(
                 kind="quick_close_pattern",
                 claim="Quick-close rate up %.1fpp — tickets resolved <4h that never reached an engineer" % pp,
                 metric="%.0f%% → %.0f%%  (%d tickets)" % (prior_qc_rate, cur_qc_rate, cur_qc_count),
-                evidence_keys=evidence,
+                evidence_keys=_evidence_from_items(cur_qc.get("items")),
                 severity="medium",
                 audience_hint="support",
                 pp=pp,
@@ -1321,13 +1325,12 @@ def derive_findings(current, prior, deltas):
     ro = cur_l1.get("reassign_out") or {}
     ro_count = ro.get("count") or 0
     if ro_count >= cfg["abs"]:
-        evidence = [it.get("key", "") for it in (ro.get("items") or [])][:20]
         findings.append(_finding(
             kind="reassign_out_burst",
             claim="%d tickets routed *out* of the team after intake" % ro_count,
             metric="%d tickets (24h fast-bounce: %d)" % (
                 ro_count, ro.get("fast_bounce_24h_calendar_count") or 0),
-            evidence_keys=evidence,
+            evidence_keys=_evidence_from_items(ro.get("items")),
             severity=_severity_from_count(ro_count, cfg),
             audience_hint="support",
         ))
@@ -1340,13 +1343,12 @@ def derive_findings(current, prior, deltas):
         prior_wd = prior_l1.get("wont_do") or {}
         prior_wd_count = prior_wd.get("count") or 0
         if prior_wd_count > 0 and (wd_count / prior_wd_count) >= cfg["ratio"]:
-            evidence = [it.get("key", "") for it in (wd.get("items") or [])][:20]
             findings.append(_finding(
                 kind="never_do_rate",
                 claim="Won't Do / Cannot Reproduce / Duplicate count %dx vs prior" % (
                     wd_count // max(prior_wd_count, 1)),
                 metric=_arrow(prior_wd_count, wd_count),
-                evidence_keys=evidence,
+                evidence_keys=_evidence_from_items(wd.get("items")),
                 severity="medium",
                 audience_hint="support",
             ))
@@ -1402,7 +1404,6 @@ def main():
 
     data_path = os.path.join(CACHE_DIR, "data.json")
     prior_path = os.path.join(CACHE_DIR, "data_prior.json")
-    setup_path = os.path.join(CACHE_DIR, "setup.json")
 
     try:
         with open(data_path) as f:
@@ -1410,11 +1411,6 @@ def main():
     except FileNotFoundError:
         print("ERROR: %s not found. Run fetch.py first." % data_path, file=sys.stderr)
         sys.exit(1)
-    try:
-        with open(setup_path) as f:
-            _ = json.load(f)  # currently unused here; loaded for forward compat
-    except FileNotFoundError:
-        pass
 
     prior_data = None
     if os.path.exists(prior_path):
