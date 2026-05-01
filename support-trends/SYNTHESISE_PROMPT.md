@@ -55,7 +55,7 @@ For each finding:
 
 ### Selection rules
 
-- **Don't restate every deterministic finding.** If two findings overlap (e.g. `volume_change` and `volume_spike_by_component`), prefer the more specific one or merge.
+- **Don't restate every deterministic finding.** If two findings overlap (e.g. `volume_change` and `volume_spike_by_component`), prefer the more specific one or merge. Note: `analyze.derive_findings()` already does the obvious case for you — when a single component spike accounts for ≥60% of the team-level volume delta, `volume_change` is suppressed and the component finding carries `also_explains_team_volume: true` + `explains_team_volume_share`. When you see that tag, your `claim` should mention both angles ("PMS Sync component up 350% — drove 64% of the team-level volume jump") rather than pretending the team-level signal didn't fire.
 - **Don't pad.** A short, sharp findings list beats a long, padded one. The reader is an engineering manager — they will spot filler immediately.
 - **Mix exec and support audience.** A typical monthly digest has 2–4 exec findings (volume / quality / themes) and 4–8 support findings (charter drift, containment, categorisation, L2 quality regressions).
 - **Cite themes by name.** "Recurring theme `pms-sync-yardi` jumped from 4 to 11 tickets" is better than "Some theme grew significantly".

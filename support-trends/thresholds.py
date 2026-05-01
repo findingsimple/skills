@@ -40,6 +40,17 @@ COMPONENT_SPIKE = {
     "prior_floor": 2,
 }
 
+# === Cross-finding merge: component spike explains team-level volume change ===
+# When a single component's absolute delta accounts for at least `share` of the
+# team-level absolute volume delta, suppress the parallel volume_change finding
+# and mark the component spike with `also_explains_team_volume: true`. Stops
+# the synthesise agent (and the report) from restating the same underlying
+# signal twice. Lower the share to merge more aggressively; raise to merge
+# only when a component is clearly the sole driver.
+COMPONENT_EXPLAINS_TEAM_VOLUME = {
+    "share": 0.60,
+}
+
 # === Finding: defect_rate_change ===
 # Bug-share of in-window tickets shifts by `pp` percentage points OR absolute
 # bug-count delta reaches `abs_delta` AND current bug count reaches `abs_floor`.

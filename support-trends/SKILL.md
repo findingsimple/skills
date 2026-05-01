@@ -246,6 +246,7 @@ All deterministic findings emitted by `analyze.derive_findings()` read their tri
 | `never_do_rate` | `thresholds.NEVER_DO` | `ratio` (multiple of prior count), `abs` |
 | `categorisation_blank` | `thresholds.CATEGORISATION_BLANK` | `pct` (share of resolved-in-window), `abs_resolved_floor`, `severity_high` |
 | `l3_bounced_back` | `thresholds.L3_BOUNCED` | `abs`, `severity_high` |
+| _(merge rule)_ component spike subsumes `volume_change` | `thresholds.COMPONENT_EXPLAINS_TEAM_VOLUME` | `share` — when any component spike's absolute delta accounts for ≥ this share of the team-level absolute delta, the team-level `volume_change` finding is suppressed and the component finding is tagged `also_explains_team_volume: true` |
 
 Display-only formatting cutoffs (small-base markers, concentration call-outs) live in `thresholds.DISPLAY` — these affect the renderer, not whether a finding fires.
 

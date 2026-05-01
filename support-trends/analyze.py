@@ -1390,6 +1390,50 @@ def derive_findings(current, prior, deltas):
             audience_hint="support",
         ))
 
+    # --- Cross-finding merge: component spike subsumes team-level volume_change ---
+    # A team-level volume_change finding plus a parallel volume_spike_by_component
+    # finding for the same window are usually two angles on the same underlying
+    # signal — the synthesise agent is supposed to merge them, but agent
+    # judgement is inconsistent run-to-run. Do the merge in code: if any single
+    # component's absolute delta accounts for at least the threshold share of
+    # the team-level absolute delta, suppress volume_change and tag the
+    # component finding with `also_explains_team_volume: true`.
+    if have_prior:
+        share_cfg = thresholds.COMPONENT_EXPLAINS_TEAM_VOLUME
+        team_abs_delta = abs(
+            (cur_totals.get("created_in_window") or 0)
+            - (prior_totals.get("created_in_window") or 0)
+        )
+        if team_abs_delta > 0:
+            comp_findings = [f for f in findings if f["kind"] == "volume_spike_by_component"]
+            for cf in comp_findings:
+                # The component finding's metric is "{prior} → {current}" — derive
+                # absolute delta from the component breakdown rows we already
+                # walked, by re-matching the component name out of the claim.
+                # Cheap and avoids stashing extra state on the finding.
+                m = re.search(r"Component '([^']+)'", cf.get("claim", ""))
+                if not m:
+                    continue
+                name = m.group(1)
+                row = next((r for r in (cur_breakdowns.get("components") or [])
+                            if r.get("name") == name), None)
+                if row is None:
+                    continue
+                comp_abs_delta = abs(
+                    (row.get("count") or 0) - (row.get("prior_count") or 0))
+                if comp_abs_delta / team_abs_delta >= share_cfg["share"]:
+                    cf["also_explains_team_volume"] = True
+                    cf["explains_team_volume_share"] = round(
+                        comp_abs_delta / team_abs_delta, 2)
+                    # Drop the team-level volume_change finding — its story is
+                    # now told by the component spike, with provenance.
+                    findings = [f for f in findings if f["kind"] != "volume_change"]
+                    # Keep the loop running so multiple co-firing component
+                    # spikes get tagged, but only one removal of volume_change
+                    # is needed.
+            # If any tag fired, re-emit so subsequent additions to derive_findings
+            # don't accidentally re-add volume_change.
+
     return findings
 
 
