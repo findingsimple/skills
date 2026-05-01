@@ -48,7 +48,6 @@ Reuses sprint-pulse's variables — no new vars beyond what v1 already used.
 | `SUPPORT_TEAM_LABEL` | One required | Per-team labels (matches `SPRINT_TEAMS` order); CSV-OR per slot |
 | `SUPPORT_TEAM_FIELD_VALUES` | One required | Per-team values for the Team custom field `cf[10600]` |
 | `CHARTER_TEAMS` | No | Canonical team names for charter-drift detection (reuses `support-routing-audit` format) |
-| `CHARTERS_PATH` | No | Optional charter doc override; must resolve under `OBSIDIAN_TEAMS_PATH` or the skill dir |
 
 If neither support team filter is set the skill aborts to avoid querying the entire support project across all teams.
 
@@ -75,7 +74,7 @@ setup ─► fetch ─► analyze ─► bundle ─┬─► themes-agent ──
                                          (these two run in parallel)
 ```
 
-All sub-agent stages read `/tmp/support_trends/bundle.json` via `cat` (not the Read tool) and write results back to `/tmp/support_trends/{themes,support_feedback,synthesise}/results.json`.
+The themes and support-feedback sub-agents read `/tmp/support_trends/bundle.json` via `cat` (not the Read tool). The synthesise sub-agent reads `/tmp/support_trends/analysis.json` directly (which by Step 6 has the validated themes + support-feedback results merged in by the apply scripts). All three write results to `/tmp/support_trends/{themes,support_feedback,synthesise}/results.json`.
 
 ### Step 1 — Setup
 
@@ -103,13 +102,13 @@ Runs all deterministic checks and emits **crystallised findings**, not raw count
 
 ```json
 {
-  "kind": "volume_spike|defect_rate|reopens|quick_close|reassign_out|ack_sla|never_do|charter_drift_candidate|categorisation_blank|...",
+  "kind": "volume_change|volume_spike_by_component|defect_rate_change|priority_mix_shift|time_to_engineer_regression|reopen_spike|quick_close_pattern|reassign_out_burst|never_do_rate|categorisation_blank|l3_bounced_back",
   "claim": "Ingest defects up 38% MoM (16 → 22)",
   "metric": "16 → 22",
   "delta_pct": 37.5,
   "evidence_keys": ["ECS-123", ...],
   "severity": "high|medium|low",
-  "audience_hint": "exec|support|both"
+  "audience_hint": "exec|support"
 }
 ```
 
@@ -147,14 +146,15 @@ python3 ~/.claude/skills/support-trends/apply_themes.py
 python3 ~/.claude/skills/support-trends/apply_support_feedback.py
 ```
 
-Both apply scripts validate IDs, recompute counts from validated records, and persist vocabulary back to `/tmp/support_trends/themes_vocabulary.json`. If either sub-agent fails or its `results.json` is missing, the renderer continues without that section and prints a `[section unavailable]` notice.
+Both apply scripts validate IDs, recompute counts from validated records, and persist the themes vocabulary canonically to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/.themes_vocabulary.json` (with a per-team `/tmp/support_trends/themes_vocabulary_{vault_dir}.json` legacy fallback for first-run recovery). If either sub-agent fails or its `results.json` is missing, the renderer continues without that section: themes shows `_[unavailable — themes sub-agent did not run or produced no themes]_`, support-feedback shows `_No support-feedback signals this window._`.
 
 ### Step 6 — Synthesise
 
 Spawn **one** `general-purpose` sub-agent. Prompt: read `~/.claude/skills/support-trends/SYNTHESISE_PROMPT.md`, then append:
 ```
-Read /tmp/support_trends/analysis.json, /tmp/support_trends/themes/results.json,
-and /tmp/support_trends/support_feedback/results.json with cat. Pick the top
+Read /tmp/support_trends/analysis.json with cat (the apply scripts have
+already merged the validated themes + support_feedback agent outputs into
+this file under the `themes` and `support_feedback` keys). Pick the top
 findings, group by audience (exec / support), write one-line so_what per finding,
 and emit /tmp/support_trends/synthesise/results.json per the schema.
 ```
@@ -186,7 +186,7 @@ python3 ~/.claude/skills/support-trends/apply_synthesise.py
 python3 ~/.claude/skills/support-trends/report.py
 ```
 
-Pure renderer. Reads `analysis.json`, `themes/results.json`, `support_feedback/results.json`, `synthesise/results.json`. Writes:
+Pure renderer. Reads `setup.json` and `analysis.json` (the apply scripts in Steps 5–6 already merged the validated themes / support_feedback / synthesise / narrative_notes content into `analysis.json` — so report.py touches only those two files). Writes:
 
 - `/tmp/support_trends/report.md` (terminal preview)
 - `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/{year}/Support Trends — {team} — {window}.md`
@@ -206,25 +206,45 @@ tags: [support-trends]
 
 # Findings
 
-- {claim} ({metric}) — [[ECS-123]] [[ECS-234]] ...
+## Context
+- _{narrative_note text — only present when narrative_notes fired (e.g. holiday window overlap)}_
+
+- **{claim}** (`{metric}`) _(confidence)_ — [[ECS-123]] [[ECS-234]] ...
   → {so_what}
 - ...
 
 ## To Support
-- {claim — charter drift / containment / categorisation} ({metric}) — [[ECS-...]] ...
+- **{claim — exec+support audience}** (`{metric}`) _(confidence)_ — [[ECS-...]] ...
   → {so_what}
-- ...
+
+### Charter drift candidates
+- [[ECS-...]] — suggested: **{team}** _(confidence)_
+  → {reason}
+
+### L2 containment signals
+- **{pattern}** _(confidence)_ — [[ECS-...]]
+  → {gap}
+
+### Categorisation quality
+- [[ECS-...]] _(confidence)_ — {issue}
+  → suggested: `{category}`
 
 # Themes
-| Theme | Count | Tickets |
-|---|---|---|
-| pms-sync-yardi | 12 | [[ECS-...]] ... |
+| Theme | Current | Prior | Δ | Tickets |
+|---|---:|---:|---:|---|
+| pms-sync-yardi | 12 | 6 | +6 | [[ECS-...]] ... |
 
 # Numbers
-- Volume table (created vs resolved by bucket)
-- Defect rate
-- Age buckets
-- L2 / triage signals (time-to-first-engineer, reopens, quick-close, reassign-out, won't-do rate)
+
+## Volume by bucket
+| Bucket | Created | Resolved | Net | Backlog end |
+
+## Resolution Category breakdown
+| Category | Count | Share |
+
+## L2 / triage signals
+| Signal | Value |
+| (time-to-first-engineer p50/p90, never-assigned, reopen, quick-close, reassign-out, won't-do) |
 ```
 
 No section emits prose beyond `so_what` lines from the synthesise agent. Number tables are direct renders of `analysis.json`.
@@ -273,6 +293,6 @@ The synthesise agent sees `narrative_notes` and may reference them in `so_what` 
 ## Failure modes
 
 - **Sub-agent timeout / failure**: section omitted with `[unavailable]` notice; rest of report renders.
-- **Synthesise rejected**: report falls back to rendering raw findings from `analysis.json` grouped by `audience_hint`.
+- **Synthesise rejected (or never wrote `synthesise/results.json`)**: report falls back to rendering raw deterministic findings filtered to `audience_hint == "exec"` under the Findings header. Support-audience deterministic findings are NOT rendered in this fallback — only the support-feedback agent output (charter drift / containment / categorisation) lands under To Support.
 - **Empty window** (no tickets): report renders headers + "No tickets in window" notice.
-- **Themes vocabulary drift**: vocabulary file is per-team; corruption is recoverable by deleting `/tmp/support_trends/themes_vocabulary.json`.
+- **Themes vocabulary drift**: vocabulary file is per-team; canonical location is `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/.themes_vocabulary.json`. Delete that file to reseed; the legacy `/tmp/support_trends/themes_vocabulary_{vault_dir}.json` is only used as a first-run fallback.

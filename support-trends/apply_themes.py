@@ -225,11 +225,18 @@ def main():
         with open(RESULTS_PATH) as f:
             results = json.load(f)
     except FileNotFoundError:
-        print("ERROR: %s not found. Did the themes sub-agent run?" % RESULTS_PATH, file=sys.stderr)
-        sys.exit(1)
+        # Match apply_support_feedback / apply_synthesise: missing results = WARN
+        # + rc=0 so a slow / timed-out themes agent doesn't block the rest of the
+        # pipeline. report.py renders "_[unavailable]_" in the Themes section.
+        print("WARNING: %s missing — themes sub-agent likely failed; report will render without themes." % RESULTS_PATH, file=sys.stderr)
+        sys.exit(0)
     except json.JSONDecodeError as e:
-        print("ERROR: %s is not valid JSON (%s). The themes sub-agent likely produced truncated or malformed output — re-run the themes step." % (RESULTS_PATH, e), file=sys.stderr)
-        sys.exit(1)
+        print("WARNING: %s is not valid JSON (%s) — themes sub-agent produced truncated or malformed output; report will render without themes." % (RESULTS_PATH, e), file=sys.stderr)
+        sys.exit(0)
+    if not isinstance(results, dict):
+        print("WARNING: %s top level is %s, not a JSON object — themes sub-agent produced malformed output; report will render without themes." % (
+            RESULTS_PATH, type(results).__name__), file=sys.stderr)
+        sys.exit(0)
     try:
         with open(ANALYSIS_PATH) as f:
             analysis = json.load(f)

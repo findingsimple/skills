@@ -65,6 +65,12 @@ def _resolve_window(value):
         if not (1 <= m <= 12):
             print("ERROR: --window month component out of range: %r" % value, file=sys.stderr)
             sys.exit(2)
+        # Bound year to leave headroom for prior-window math (year - 1) and
+        # for narrative_notes overlap probes (year + 1 December block). Prevents
+        # downstream year=0 / year=10000 ValueError surprises.
+        if not (2 <= y <= 9998):
+            print("ERROR: --window year out of supported range (2..9998): %r" % value, file=sys.stderr)
+            sys.exit(2)
         s, e, label = _month_bounds(y, m)
         return s, e, label, "month"
 
@@ -82,6 +88,9 @@ def _resolve_window(value):
         if d_start > d_end:
             print("ERROR: --window start (%s) is after end (%s)" % (start, end), file=sys.stderr)
             sys.exit(2)
+        if not (2 <= d_start.year <= 9998 and 2 <= d_end.year <= 9998):
+            print("ERROR: --window year out of supported range (2..9998): %r" % value, file=sys.stderr)
+            sys.exit(2)
         return start, end, "%s_to_%s" % (start, end), "range"
 
     print("ERROR: --window must be 'month', 'YYYY-MM', or 'YYYY-MM-DD..YYYY-MM-DD'; got %r" % value, file=sys.stderr)
@@ -98,10 +107,13 @@ def _resolve_prior_window(start, end, kind):
         py, pm = (d_start.year - 1, 12) if d_start.month == 1 else (d_start.year, d_start.month - 1)
         ps, pe, _ = _month_bounds(py, pm)
         return ps, pe
-    # Range: prior window of equal length, ending the day before start.
-    span = (d_end - d_start).days  # inclusive count = span + 1
+    # Range: prior window of equal *inclusive* length, ending the day before start.
+    # `(d_end - d_start).days + 1` is the inclusive day count (e.g. Apr 1 → Apr 30
+    # is 30 days, not 29). The prior window must match that span exactly so per-day
+    # comparisons don't silently skew.
+    inclusive_days = (d_end - d_start).days + 1
     prior_end_d = d_start - timedelta(days=1)
-    prior_start_d = prior_end_d - timedelta(days=span)
+    prior_start_d = prior_end_d - timedelta(days=inclusive_days - 1)
     return prior_start_d.isoformat(), prior_end_d.isoformat()
 
 

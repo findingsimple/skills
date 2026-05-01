@@ -119,6 +119,10 @@ def main():
     if results is None:
         print("WARNING: %s missing — sub-agent likely failed; report will render without support-feedback section." % RESULTS_PATH, file=sys.stderr)
         sys.exit(0)
+    if not isinstance(results, dict):
+        print("WARNING: %s top level is %s, not a JSON object — sub-agent produced malformed output; report will render without support-feedback section." % (
+            RESULTS_PATH, type(results).__name__), file=sys.stderr)
+        sys.exit(0)
     analysis = _load_json(ANALYSIS_PATH)
     if analysis is None:
         print("ERROR: analysis.json missing.", file=sys.stderr)

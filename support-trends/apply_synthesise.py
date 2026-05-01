@@ -80,7 +80,9 @@ def _validate_finding(rec, valid_keys):
     if not claim:
         print("WARNING: synthesise finding dropped — empty claim", file=sys.stderr)
         return None
-    confidence = (rec.get("confidence") or "").strip().lower()
+    # Coerce non-string confidence (int, bool, None) to string before normalising —
+    # an int from the agent would crash .strip() and drop every finding.
+    confidence = str(rec.get("confidence") or "").strip().lower()
     if confidence not in _VALID_CONFIDENCE:
         confidence = "medium"
     return {
@@ -100,6 +102,10 @@ def main():
         # Write empty findings list so report.py knows the section ran but
         # produced nothing. Distinguishes "agent ran and found nothing" from
         # "agent didn't run at all" — both render the same way (raw fallback).
+        sys.exit(0)
+    if not isinstance(results, dict):
+        print("WARNING: %s top level is %s, not a JSON object — sub-agent produced malformed output; falling back." % (
+            RESULTS_PATH, type(results).__name__), file=sys.stderr)
         sys.exit(0)
     analysis = _load_json(ANALYSIS_PATH)
     if analysis is None:

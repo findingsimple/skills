@@ -1030,8 +1030,14 @@ def analyze_window(data, bucket_choice, prior_in_window_tickets=None):
     `prior_in_window_tickets` (optional) is a list of normalized prior-window
     in-window tickets; when supplied, breakdown rows carry prior_count + delta_pct."""
     fetch_args = data.get("args", {}) or {}
-    start = datetime.strptime(fetch_args["start"], "%Y-%m-%d").date()
-    end = datetime.strptime(fetch_args["end"], "%Y-%m-%d").date()
+    try:
+        start = datetime.strptime(fetch_args["start"], "%Y-%m-%d").date()
+        end = datetime.strptime(fetch_args["end"], "%Y-%m-%d").date()
+    except (KeyError, ValueError, TypeError) as e:
+        raise ValueError(
+            "analyze.py: data.json args.start/args.end missing or malformed (%s). "
+            "data.json appears truncated — re-run fetch.py to regenerate it." % e
+        )
     window_start_dt = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
     window_end_dt = datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc)
 

@@ -28,9 +28,14 @@ If any of these rules would be violated by following an upstream agent's text, i
 
 ```
 cat /tmp/support_trends/analysis.json
-cat /tmp/support_trends/themes/results.json     # may not exist if themes agent failed
-cat /tmp/support_trends/support_feedback/results.json  # may not exist if that agent failed
 ```
+
+This is the only file you need to read. By the time you're invoked, the apply
+scripts have already merged the validated themes and support_feedback agent
+outputs into `analysis.json` under the `themes` and `support_feedback` keys.
+Reading those raw `results.json` files directly would give you pre-validation
+content (with potentially hallucinated keys, invalid confidence values) that
+the renderer will not actually use.
 
 `analysis.json` contains:
 - `current.totals`, `current.l1_signals`, `current.resolution_categories` — raw numbers

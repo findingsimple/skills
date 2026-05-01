@@ -469,28 +469,33 @@ def main():
     _atomic_write(REPORT_TMP_PATH, body)
     print("Wrote %s (%d bytes)" % (REPORT_TMP_PATH, len(body)))
 
-    if args.dry_run:
-        print()
-        print("=" * 60)
-        print(body)
-        print("=" * 60)
-        return
-
-    vault_path = _vault_path(setup)
-    if vault_path is None:
-        print("WARNING: vault path could not be resolved; report not written to vault. Re-run with --dry-run to see output.", file=sys.stderr)
-        return
-
-    out_dir = os.path.dirname(vault_path)
-    os.makedirs(out_dir, exist_ok=True)
-    _atomic_write(vault_path, body)
-    print("Wrote vault file: %s" % vault_path)
-
-    # Release the pipeline lock now that the run completed successfully.
     try:
-        concurrency.release()
-    except Exception as e:
-        print("WARNING: lock release failed (%s) — manual cleanup may be needed." % e, file=sys.stderr)
+        if args.dry_run:
+            print()
+            print("=" * 60)
+            print(body)
+            print("=" * 60)
+            return
+
+        vault_path = _vault_path(setup)
+        if vault_path is None:
+            print("WARNING: vault path could not be resolved; report not written to vault. Re-run with --dry-run to see output.", file=sys.stderr)
+            return
+
+        out_dir = os.path.dirname(vault_path)
+        os.makedirs(out_dir, exist_ok=True)
+        _atomic_write(vault_path, body)
+        print("Wrote vault file: %s" % vault_path)
+    finally:
+        # Release the pipeline lock on every exit path from the post-render
+        # phase, including --dry-run and the vault-path-unresolved early
+        # return. Without this finally, a dry-run preview or a missing
+        # OBSIDIAN_TEAMS_PATH leaves the lock held until the 4h staleness
+        # cutoff, blocking every subsequent pipeline run.
+        try:
+            concurrency.release()
+        except Exception as e:
+            print("WARNING: lock release failed (%s) — manual cleanup may be needed." % e, file=sys.stderr)
 
 
 if __name__ == "__main__":
