@@ -15,10 +15,12 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [incident-kb](incident-kb/) | `/incident-kb` | Build searchable Obsidian knowledge base from Confluence incident retros and Jira INC epics |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
+| [root-cause-suggest](root-cause-suggest/) | `/root-cause-suggest [--team <name>] [--keys K1,K2 \| --from-file path] [--since 30d]` | Suggest root-cause links for a batch of unlinked support tickets. Default mode auto-discovers unlinked tickets in the focus team's recent intake; per ticket the sub-agent recommends linking to an existing root cause, proposing a new one (clusters tickets that share an underlying issue), or skipping with a reason. Output is a Markdown report — high-confidence links are bulk-applyable, the rest are review-first. Never mutates Jira. |
 | [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
+| [support-routing-audit](support-routing-audit/) | `/support-routing-audit [--team <name>] [--start ...] [--end ...]` | Audit support tickets routed to a focus team over a period (default current month) and flag ones that should have gone elsewhere per the configured team charters — with target team, reasoning, and confidence. Focus team and canonical team list are supplied via env vars (no team is hardcoded). Output is a terminal Markdown report ready to paste into a leadership chat. |
 | [support-ticket-triage](support-ticket-triage/) | `/support-ticket-triage <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
 | [vault-linker](vault-linker/) | `/vault-linker` | Add Obsidian `[[wiki links]]` to existing vault files by scanning for known entities (people, incidents, Jira keys) |
 
@@ -84,11 +86,15 @@ export GITLAB_URL="https://gitlab.com"
 export GITLAB_TOKEN="your_gitlab_token"        # read_api scope
 export GITLAB_PROJECT_ID="12345678"
 
-# Support tickets (sprint-pulse)
+# Support tickets (sprint-pulse, support-routing-audit)
 export SUPPORT_PROJECT_KEY="SUP"
 export SUPPORT_BOARD_ID="789"
 export SUPPORT_TEAM_LABEL="label-a,label-b|label-c"
 export SUPPORT_TEAM_FIELD_VALUES="TeamA,TeamB|TeamC"
+
+# Charter teams allow-list (support-routing-audit) — pipe-delimited canonical
+# names; optional comma-separated aliases per slot after a colon
+export CHARTER_TEAMS="TeamA|TeamB|TeamC:gamma,team-c"
 
 # Root cause triage
 export TRIAGE_BOARD_ID="731"
