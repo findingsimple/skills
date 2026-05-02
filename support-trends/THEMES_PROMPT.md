@@ -50,13 +50,13 @@ The fields you care about:
 {
   "current_window": {"start": "...", "end": "...", "days": N},
   "prior_window":  {"start": "...", "end": "...", "days": N} | null,
-  "team_vault_dir": "ACE",
+  "team_vault_dir": "TeamA",
   "current_tickets": [
     {
-      "key": "ECS-1234",
+      "key": "PROJ-1234",
       "summary": {"_untrusted": true, "text": "..."},
       "description_snippet": {"_untrusted": true, "text": "..."},
-      "component": "...",
+      "components": ["..."],
       "labels": [...],
       "reporter": {"_untrusted": true, "text": "..."},
       "status": "...",
@@ -67,7 +67,7 @@ The fields you care about:
   ],
   "prior_tickets": [...same shape...],
   "vocabulary_hint": null | {
-    "themes": [{"id": "pms-sync-yardi", "definition": "..."}, ...]
+    "themes": [{"id": "integration-sync-vendor-x", "definition": "..."}, ...]
   }
 }
 ```
@@ -80,10 +80,10 @@ For **each ticket** in `current_tickets` AND `prior_tickets`, produce a record:
 
 ```json
 {
-  "key": "ECS-1234",
-  "themes": ["pms-sync-yardi", "work-order-mapping"],
-  "customer": "Beztak",
-  "micro_summary": "Yardi work-order count discrepancy — completed WOs not syncing back"
+  "key": "PROJ-1234",
+  "themes": ["integration-sync-vendor-x", "work-order-mapping"],
+  "customer": "Acme Corp",
+  "micro_summary": "Vendor X work-order count discrepancy — completed WOs not syncing back"
 }
 ```
 
@@ -91,12 +91,12 @@ Then produce a top-level `theme_vocabulary` listing every distinct theme used, w
 
 ### Theme rules
 
-- **Be specific but not too narrow.** Good: `pms-sync-yardi`, `unit-setup-csv-import`, `sso-config`, `admin-permissions`, `integration-feature-gap`. Bad (too narrow): `beztak-yardi-april`. Bad (too broad): `integration-issue`.
-- **Use kebab-case lowercase IDs** — `pms-sync-yardi`, not `PMS Sync Yardi`.
+- **Be specific but not too narrow.** Good: `integration-sync-vendor-x`, `unit-setup-csv-import`, `sso-config`, `admin-permissions`, `integration-feature-gap`. Bad (too narrow): `acme-corp-vendor-x-april`. Bad (too broad): `integration-issue`.
+- **Use kebab-case lowercase IDs** — `integration-sync-vendor-x`, not `Integration Sync Vendor X`.
 - **Aim for 8–20 distinct themes total** for a typical 30–90 day window. If your vocabulary explodes past 25, you're being too specific — merge related ones.
-- **A ticket can have 1–3 themes.** Most should have 1–2. Use multi-tagging when a ticket genuinely sits at a boundary (e.g. PMS sync + customer-config).
+- **A ticket can have 1–3 themes.** Most should have 1–2. Use multi-tagging when a ticket genuinely sits at a boundary (e.g. integration sync + customer-config).
 - **`micro_summary` must be ≤ 120 chars.** A leader scanning the report should understand the issue without clicking the Jira link. State the symptom, not the customer name (the `customer` field carries that).
-- **`customer` is the customer / property-management-company name.** Extract from the summary or description. Use `(internal)` for internal tickets. Use `(unknown)` only when truly not derivable.
+- **`customer` is the customer / end-account name.** Extract from the summary or description. Use `(internal)` for internal tickets. Use `(unknown)` only when truly not derivable.
 
 ### When to reuse existing themes (vocabulary stability)
 
@@ -105,13 +105,13 @@ If `vocabulary_hint` is non-null, it lists themes used in prior runs.
 **Strong reuse rule (treat as binding, not a suggestion):**
 
 - If a hint theme already covers the meaning of a ticket — **you MUST reuse the exact hint ID**. Do not invent a new ID for a theme that already exists in the hint with substantively the same meaning, even if you would have phrased the ID differently when seeding.
-- "Substantively the same meaning" includes minor scope drift: `pms-sync-yardi` covers all Yardi sync issues even if this run's tickets are about a slightly different sub-symptom (work-orders vs tasks vs categories). Don't split it into `pms-sync-yardi-categories` just because the new sample emphasises categories.
+- "Substantively the same meaning" includes minor scope drift: `integration-sync-vendor-x` covers all Vendor X sync issues even if this run's tickets are about a slightly different sub-symptom (work-orders vs tasks vs categories). Don't split it into `integration-sync-vendor-x-categories` just because the new sample emphasises categories.
 - Only invent a **new** theme ID when **no** hint entry plausibly fits — i.e. the underlying surface is genuinely a new product area, not a rephrasing of an existing one. When in doubt, prefer reuse.
 - The same rule applies across windows: when tagging `prior_tickets` and `current_tickets`, use the same theme IDs for the same underlying problems so the report's per-theme delta math is meaningful.
 
-Why this matters: month-over-month deltas on themes are a load-bearing leadership signal. If you tag the same recurring problem as `pms-sync-yardi` last run and `pms-sync-yardi-workorders` this run, the report shows a fake "−10 / +10" delta and a fake "new theme" alert. Reuse exact IDs even when the prose tempts you toward more-specific names.
+Why this matters: month-over-month deltas on themes are a load-bearing leadership signal. If you tag the same recurring problem as `integration-sync-vendor-x` last run and `integration-sync-vendor-x-workorders` this run, the report shows a fake "−10 / +10" delta and a fake "new theme" alert. Reuse exact IDs even when the prose tempts you toward more-specific names.
 
-If `vocabulary_hint` is null, you're seeding the vocabulary — be deliberate about names, future runs will reuse them. Aim for IDs broad enough to absorb future variants (e.g. `pms-sync-yardi`, not `yardi-workorders-march-2026`).
+If `vocabulary_hint` is null, you're seeding the vocabulary — be deliberate about names, future runs will reuse them. Aim for IDs broad enough to absorb future variants (e.g. `integration-sync-vendor-x`, not `vendor-x-workorders-march-2026`).
 
 ### Quality bar
 
@@ -131,8 +131,8 @@ The file must be valid JSON in this exact shape:
 {
   "theme_vocabulary": [
     {
-      "id": "pms-sync-yardi",
-      "definition": "Yardi work-order or task sync issues — count discrepancies, missing exports, mapping gaps",
+      "id": "integration-sync-vendor-x",
+      "definition": "Vendor X work-order or task sync issues — count discrepancies, missing exports, mapping gaps",
       "count_total": 12,
       "count_current": 8,
       "count_prior": 4
@@ -140,17 +140,17 @@ The file must be valid JSON in this exact shape:
   ],
   "current_records": [
     {
-      "key": "ECS-1234",
-      "themes": ["pms-sync-yardi"],
-      "customer": "Beztak",
-      "micro_summary": "Yardi work-order count discrepancy — completed WOs not syncing back"
+      "key": "PROJ-1234",
+      "themes": ["integration-sync-vendor-x"],
+      "customer": "Acme Corp",
+      "micro_summary": "Vendor X work-order count discrepancy — completed WOs not syncing back"
     }
   ],
   "prior_records": [
     {
-      "key": "ECS-987",
-      "themes": ["pms-sync-yardi"],
-      "customer": "Kairoi",
+      "key": "PROJ-987",
+      "themes": ["integration-sync-vendor-x"],
+      "customer": "Globex Industries",
       "micro_summary": "..."
     }
   ]

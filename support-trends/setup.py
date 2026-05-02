@@ -12,7 +12,7 @@ import sys
 from datetime import date
 
 import concurrency
-from jira_client import load_env, init_auth, jira_get, ensure_tmp_dir, atomic_write_json
+from jira_client import load_env, init_auth, ensure_tmp_dir, atomic_write_json
 
 
 CACHE_DIR = "/tmp/support_trends"
@@ -254,27 +254,6 @@ def main():
             t["vault_dir"], t["project_key"], t["display_name"], status, "  ".join(bits)))
     print()
 
-    # Fetch support board column config (used by analyze.py to know which statuses are closed).
-    support_board_config = []
-    if support_board_id:
-        try:
-            path = "/rest/agile/1.0/board/%s/configuration" % support_board_id
-            config = jira_get(base_url, path, auth)
-            for col in config.get("columnConfig", {}).get("columns", []):
-                statuses = [s.get("id", "") for s in col.get("statuses", [])]
-                support_board_config.append({
-                    "name": col.get("name", ""),
-                    "statuses": statuses,
-                })
-            col_names = [c["name"] for c in support_board_config]
-            print("=== SUPPORT BOARD COLUMNS ===")
-            print(" → ".join(col_names))
-            print()
-        except Exception as e:
-            print("WARNING: Could not fetch support board config (board %s): %s" % (support_board_id, e), file=sys.stderr)
-    else:
-        print("INFO: SUPPORT_BOARD_ID not set; reopen and quick-close detection will fall back to resolution presence.", file=sys.stderr)
-
     ensure_tmp_dir(CACHE_DIR)
     setup_data = {
         # Session token from concurrency.acquire(). Mid-pipeline scripts call
@@ -300,7 +279,6 @@ def main():
             "prior_end": prior_end,
         },
         "teams": teams,
-        "support_board_config": support_board_config,
     }
     atomic_write_json(os.path.join(CACHE_DIR, "setup.json"), setup_data)
     print("Setup data saved to %s/setup.json" % CACHE_DIR)

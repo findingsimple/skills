@@ -63,16 +63,16 @@ You may also see `prior_tickets`, `findings`, and `vocabulary_hint` — those ar
 
 ## Domain context (REQUIRED reading before tagging)
 
-`resolution_category` is a single-select Jira field L2 / engineers fill in when closing a ticket. Some category values are obvious containment signals; others are not. Use this guide:
+`resolution_category` is a single-select Jira field L2 / engineers fill in when closing a ticket. Some category values are obvious containment signals; others are not. Use this category-shape guide (the literal labels in your bundle will vary per organisation — apply the *shape* to whatever values actually appear):
 
-| Category | What it usually means | Containment signal? |
+| Category shape | What it usually means | Containment signal? |
 |---|---|---|
-| `Database modification`, `Database investigation (no changes)`, `Code development`, `CLI Action`, `Re-triggering Sync Queue Jobs`, `Feature configuration` | Engineer did real engineering work | **No** — engineering owns these |
-| `Customer advice`, `Customer training`, `Customer abandoned` | Engineer ended up advising / training / waiting on the customer instead of doing engineering work | **Maybe** — judge by ticket content. Sometimes the advice was so domain-specific only an engineer could give it; sometimes a runbook would have let L2 handle it. |
-| `L3 Bounced` | Engineering received the ticket and explicitly sent it back to L2 ("not for engineering") | **Yes** — but this is already a deterministic finding, no need to flag it again |
-| `PMS Query` | Customer was asking about a Property Management System we integrate with | **No** — usually requires engineering to investigate the integration |
-| `Other`, `(blank)` | Unclear — categorisation quality issue, not a containment issue per se | **No (containment)** — flag under `categorisation_quality` instead |
-| `Documentation`, `Training` (when present) | Ambiguous — could be "L2 should have known" OR could be "*engineering* should have written better docs/training" | **Maybe** — flag the underlying gap, not the L2 person |
+| Categories that describe **engineering work** (code change, DB modification, CLI action, queue re-trigger, feature configuration) | Engineer did real engineering work | **No** — engineering owns these |
+| Categories that describe **customer-facing engagement** (customer advice, customer training, customer abandoned) | Engineer ended up advising / training / waiting on the customer instead of doing engineering work | **Maybe** — judge by ticket content. Sometimes the advice was so domain-specific only an engineer could give it; sometimes a runbook would have let L2 handle it. |
+| A **bounce-back-to-L2** category (e.g. `L3 Bounced`) | Engineering received the ticket and explicitly sent it back to L2 ("not for engineering") | **Yes** — but this is already a deterministic finding, no need to flag it again |
+| Categories that describe a **third-party / integration query** | Customer was asking about a system we integrate with | **No** — usually requires engineering to investigate the integration |
+| `Other`, `(blank)`, or any catch-all | Unclear — categorisation quality issue, not a containment issue per se | **No (containment)** — flag under `categorisation_quality` instead |
+| Categories that describe **knowledge gaps** (documentation, training) | Ambiguous — could be "L2 should have known" OR could be "*engineering* should have written better docs/training" | **Maybe** — flag the underlying gap, not the L2 person |
 
 **Rule of thumb**: never flag a containment signal without also citing what L2 would have needed (a runbook, a tool, escalation criteria) to handle it. A finding that just says "L2 should have caught this" with no actionable next step is noise.
 
@@ -114,24 +114,24 @@ The file must be valid JSON in this exact shape:
 {
   "charter_drift": [
     {
-      "ticket_keys": ["ECS-1234"],
-      "current_team": "ACE",
-      "suggested_team": "Centralized Operations",
-      "reason": "Description describes a tenant-onboarding data migration; ACE owns the admin UI but the data layer is COPS' charter.",
+      "ticket_keys": ["PROJ-1234"],
+      "current_team": "TeamA",
+      "suggested_team": "TeamB",
+      "reason": "Description describes a tenant-onboarding data migration; TeamA owns the admin UI but the data layer is TeamB's charter.",
       "confidence": "high"
     }
   ],
   "l2_containment_signals": [
     {
-      "ticket_keys": ["ECS-1235", "ECS-1240"],
-      "pattern": "Property unit-count discrepancy resolved by SQL lookup",
-      "gap": "L2 has no read-only DB query tool for unit counts. Add a self-serve dashboard in Looker or train L2 on the existing 'unit_audit' query.",
+      "ticket_keys": ["PROJ-1235", "PROJ-1240"],
+      "pattern": "Account record-count discrepancy resolved by SQL lookup",
+      "gap": "L2 has no read-only DB query tool for record counts. Add a self-serve dashboard or train L2 on the existing 'record_audit' query.",
       "confidence": "medium"
     }
   ],
   "categorisation_quality": [
     {
-      "ticket_keys": ["ECS-1250"],
+      "ticket_keys": ["PROJ-1250"],
       "issue": "Category 'Customer advice' but resolution comment describes a code change shipped via PR-1234.",
       "suggested_category": "Code development",
       "confidence": "high"

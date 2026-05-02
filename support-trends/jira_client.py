@@ -147,31 +147,6 @@ def jira_get_changelog(base_url, auth, issue_key):
     return entries
 
 
-def jira_get_dev_summary(base_url, auth, issue_numeric_id):
-    """Fetch the Jira `Development` panel summary for an issue.
-
-    Uses the undocumented but stable `/rest/dev-status/latest/issue/summary`
-    endpoint that aggregates linked branches, PRs, builds, and deployments
-    across all connected DVCS providers (GitLab / GitHub / Bitbucket).
-    Requires the issue's NUMERIC id (not key).
-
-    Returns a dict like {"pullrequest": {"count": N}, "repository": {"count": N},
-    "build": {"count": N}}. Empty dict on any error so callers can fall back to
-    URL-scan detection.
-    """
-    try:
-        path = "/rest/dev-status/latest/issue/summary?issueId=%s" % str(issue_numeric_id)
-        data = jira_get(base_url, path, auth)
-    except Exception:
-        return {}
-    summary = (data or {}).get("summary") or {}
-    out = {}
-    for key in ("pullrequest", "repository", "build", "branch", "commit"):
-        section = (summary.get(key) or {}).get("overall") or {}
-        out[key] = {"count": section.get("count", 0) or 0}
-    return out
-
-
 def jira_get_comments(base_url, auth, issue_key):
     """Fetch comments for an issue."""
     path = "/rest/api/3/issue/%s/comment?maxResults=100&orderBy=created" % issue_key

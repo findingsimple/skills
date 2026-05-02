@@ -376,30 +376,9 @@ def main():
     except OSError as e:
         print("WARNING: failed to persist themes vocabulary hint at %s: %s" % (hint_path, e), file=sys.stderr)
 
-    # Pre-compute aggregates that report.py would otherwise re-derive at
-    # render time. Two are useful for the TL;DR / handoff:
-    #   - PMS-sync aggregate: unique tickets across all `pms-sync-*` themes,
-    #     so the headline "X% of volume is PMS-sync" is multi-tag-safe.
-    #   - Cross-theme customer count: customers tagged across multiple themes
-    #     (cross-surface signal vs heavy filer in one theme).
-    aggregates = {"theme_groups": {}, "customer_theme_counts": []}
-    pms_themes = [tid for tid in by_theme if tid.startswith("pms-sync-")]
-    if pms_themes:
-        union, sum_assignments = set(), 0
-        for tid in pms_themes:
-            keys = (by_theme[tid] or {}).get("current_keys") or []
-            union.update(keys)
-            sum_assignments += len(keys)
-        all_union = set()
-        for td in by_theme.values():
-            all_union.update((td or {}).get("current_keys") or [])
-        aggregates["theme_groups"]["pms-sync-"] = {
-            "unique_tickets": len(union),
-            "denominator": len(all_union),
-            "sum_assignments": sum_assignments,
-            "share_pct": round(100.0 * len(union) / len(all_union), 1) if all_union else None,
-            "themes": sorted(pms_themes),
-        }
+    # Cross-theme customer aggregate: customers tagged across multiple themes
+    # (cross-surface signal vs heavy filer in one theme).
+    aggregates = {"customer_theme_counts": []}
     customer_to_themes = defaultdict(set)
     for tid, td in by_theme.items():
         for c in (td or {}).get("current_customers") or []:

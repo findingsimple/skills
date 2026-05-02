@@ -15,9 +15,6 @@ Conventions
 
 A finding kind with no prior-window data available (e.g. when --no-prior was
 passed) silently skips its check rather than firing on incomplete data.
-
-Display-only thresholds (small-base markers, concentration call-outs) live in
-`DISPLAY` at the bottom — they affect the renderer, not whether a finding fires.
 """
 
 # === Finding: volume_change ===
@@ -28,46 +25,6 @@ VOLUME_CHANGE = {
     "pct": 20.0,
     "abs": 20,
     "severity_high": 50.0,
-}
-
-# === Finding: volume_spike_by_component ===
-# A single component's count grows or shrinks by `pct` AND has at least `abs`
-# tickets in the current window AND `prior_floor` tickets in prior. Multiple
-# components can fire simultaneously.
-COMPONENT_SPIKE = {
-    "pct": 50.0,
-    "abs": 5,
-    "prior_floor": 2,
-}
-
-# === Cross-finding merge: component spike explains team-level volume change ===
-# When a single component's absolute delta accounts for at least `share` of the
-# team-level absolute volume delta, suppress the parallel volume_change finding
-# and mark the component spike with `also_explains_team_volume: true`. Stops
-# the synthesise agent (and the report) from restating the same underlying
-# signal twice. Lower the share to merge more aggressively; raise to merge
-# only when a component is clearly the sole driver.
-COMPONENT_EXPLAINS_TEAM_VOLUME = {
-    "share": 0.60,
-}
-
-# === Finding: defect_rate_change ===
-# Bug-share of in-window tickets shifts by `pp` percentage points OR absolute
-# bug-count delta reaches `abs_delta` AND current bug count reaches `abs_floor`.
-# OR semantics handle two distinct shapes — a share shift and a raw volume
-# spike — that both warrant a finding.
-DEFECT_RATE = {
-    "pp": 5.0,
-    "abs_delta": 5,
-    "abs_floor": 10,
-}
-
-# === Finding: priority_mix_shift ===
-# High+Highest priority share moves by `pp` percentage points vs prior. Only
-# fires when the current count of high+highest is at least `abs_floor`.
-PRIORITY_MIX = {
-    "pp": 10.0,
-    "abs_floor": 5,
 }
 
 # === Finding: time_to_engineer_regression ===
@@ -134,15 +91,4 @@ CATEGORISATION_BLANK = {
 L3_BOUNCED = {
     "abs": 3,
     "severity_high": 8,
-}
-
-# === Display thresholds (renderer only — do NOT affect findings) ===
-DISPLAY = {
-    # Δ% suffix "(small base)" attaches to a per-row delta when prior < this.
-    # Cuts visual noise from "1→3 = +200%" cells.
-    "small_base_prior_cutoff": 5,
-    # In Numbers tables, a row gets a 'concentration' marker when count ≥ floor
-    # AND its share of total ≥ share_pct.
-    "concentration_count_floor": 5,
-    "concentration_share_pct": 25.0,
 }

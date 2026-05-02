@@ -63,10 +63,10 @@ def _calendar_context_notes(current, prior):
     """Notes about known calendar events inside the window or its prior.
 
     Currently emits one kind: late-December office-closure overlap. The
-    Dec 22 – Jan 5 period is when most US + AU customer offices are closed,
-    and HappyCo support volume is materially depressed across the board.
-    Window comparisons that straddle Dec/Jan (either the current window OR
-    the prior window) will skew, and the reader needs to know that *before*
+    Dec 22 – Jan 5 period is when many customer offices are closed and
+    support volume is materially depressed across the board. Window
+    comparisons that straddle Dec/Jan (either the current window OR the
+    prior window) will skew, and the reader needs to know that *before*
     interpreting volume findings.
 
     Other calendar generators (Easter, Thanksgiving, end-of-financial-year)
