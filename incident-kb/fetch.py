@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _libpath  # noqa: F401
 from confluence_client import (
     load_env,
     init_auth,
@@ -21,7 +22,7 @@ from confluence_client import (
 )
 from jira_client import (
     jira_search_all,
-    adf_to_text as jira_adf_to_text,
+    adf_to_text_rich as jira_adf_to_text,
 )
 
 CACHE_DIR = "/tmp/incident_kb"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitLab API client utilities for sprint-pulse scripts."""
+"""Shared GitLab API client utilities."""
 
 import json
 import os

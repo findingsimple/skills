@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 
+import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, jira_get, jira_search_all
 
 

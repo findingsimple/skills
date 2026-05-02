@@ -8,6 +8,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
+import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text, ensure_tmp_dir
 
 

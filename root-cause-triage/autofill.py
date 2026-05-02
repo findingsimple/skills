@@ -13,6 +13,7 @@ import os
 import re
 import sys
 
+import _libpath  # noqa: F401
 from jira_client import load_env, ensure_tmp_dir
 
 # Import scoring logic from analyze.py

@@ -11,7 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from jira_client import load_env, init_auth, jira_get, gitlab_get, gitlab_get_all
+import _libpath  # noqa: F401
+from jira_client import load_env, init_auth, jira_get
+from gitlab_client import gitlab_get, gitlab_get_all
 
 
 # Anchored \A...\Z + re.ASCII prevents trailing-newline bypasses of JQL/URL

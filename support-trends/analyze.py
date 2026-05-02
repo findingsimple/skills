@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import concurrency
 import thresholds
+import _libpath  # noqa: F401
 from jira_client import ensure_tmp_dir, atomic_write_json
 from narrative_notes import derive_narrative_notes
 

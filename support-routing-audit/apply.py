@@ -39,6 +39,7 @@ import os
 import re
 import sys
 
+import _libpath  # noqa: F401
 from jira_client import atomic_write_json
 
 

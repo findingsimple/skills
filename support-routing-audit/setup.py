@@ -10,6 +10,7 @@ import re
 import sys
 from datetime import date
 
+import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, ensure_tmp_dir, atomic_write_json
 
 

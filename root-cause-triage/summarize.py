@@ -8,6 +8,7 @@ import os
 import re
 import sys
 
+import _libpath  # noqa: F401
 from jira_client import load_env
 
 

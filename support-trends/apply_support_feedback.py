@@ -21,6 +21,7 @@ import re
 import sys
 
 import concurrency
+import _libpath  # noqa: F401
 from jira_client import atomic_write_json
 
 

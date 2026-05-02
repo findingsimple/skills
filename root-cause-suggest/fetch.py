@@ -20,6 +20,7 @@ import re
 import sys
 import urllib.parse
 
+import _libpath  # noqa: F401
 from jira_client import (
     adf_to_text,
     atomic_write_json,

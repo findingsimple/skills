@@ -18,6 +18,7 @@ import sys
 from datetime import datetime, timezone
 
 import concurrency
+import _libpath  # noqa: F401
 from jira_client import ensure_tmp_dir, atomic_write_json
 from ticket_record import ticket_record, untrusted
 

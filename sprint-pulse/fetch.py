@@ -10,6 +10,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, jira_get, jira_search_all, jira_get_changelog, jira_get_comments
 from gitlab_client import load_gitlab_env, gitlab_get, gitlab_get_all, search_mrs_for_issue, get_mr_notes
 

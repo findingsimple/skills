@@ -28,6 +28,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 
 import concurrency
+import _libpath  # noqa: F401
 from jira_client import atomic_write_json
 from analyze import _safe_delta_pct
 

@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import _libpath  # noqa: F401
 from jira_client import ensure_tmp_dir
 
 

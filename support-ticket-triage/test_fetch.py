@@ -23,6 +23,7 @@ from fetch import (
     extract_keywords,
     scrub_term,
 )
+import _libpath  # noqa: F401
 from jira_client import adf_to_text
 
 

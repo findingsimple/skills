@@ -9,6 +9,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import concurrency
+import _libpath  # noqa: F401
 from jira_client import (
     load_env, init_auth, jira_search_all,
     jira_get_changelog, jira_get_comments, adf_to_text,

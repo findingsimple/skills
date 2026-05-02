@@ -55,7 +55,7 @@ To add a new schedule, create a `.plist.template` in `schedules/` following the 
 
 ## Architecture Notes
 
-Each skill is **self-contained** — shared utilities like `jira_client.py` and `setup.py` are intentionally duplicated per skill rather than extracted into a shared module. This keeps skills decoupled so changes to one never break another, and any skill can be moved or deleted independently.
+Each skill lives in its own directory with its own SKILL.md, scripts, and prompt templates. Cross-skill API clients (Jira, GitLab, Confluence, Bonusly) live in `_lib/` and are imported via a 3-line `_libpath.py` shim per skill. Per-skill `setup.py` is intentionally NOT shared, since each skill validates a different env-var set. To export a single skill standalone, copy its dir plus the `_lib/*.py` modules it imports and strip the shim — see `CLAUDE.md` for the full layout.
 
 ## Setup
 

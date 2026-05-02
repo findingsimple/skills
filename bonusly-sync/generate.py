@@ -7,6 +7,7 @@ import sys
 import argparse
 from datetime import datetime, timezone
 
+import _libpath  # noqa: F401
 from bonusly_client import load_env, bonusly_get_all
 
 

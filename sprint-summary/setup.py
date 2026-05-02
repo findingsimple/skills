@@ -5,6 +5,7 @@ import json
 import os
 import sys
 
+import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, jira_get
 
 

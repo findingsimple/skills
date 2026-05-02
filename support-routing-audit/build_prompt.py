@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+import _libpath  # noqa: F401
 from jira_client import ensure_tmp_dir, atomic_write_json
 
 

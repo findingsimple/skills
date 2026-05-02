@@ -14,6 +14,7 @@ import stat
 import sys
 import urllib.parse
 
+import _libpath  # noqa: F401
 from jira_client import (
     adf_to_text,
     init_auth,

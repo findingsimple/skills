@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Shared Jira API client utilities for support-trends scripts."""
+"""Shared Jira API client utilities.
+
+Single source of truth for all skills under ~/.claude/skills/. Skills reach
+this module via the per-skill `_libpath.py` shim that prepends ../_lib to
+sys.path.
+"""
 
 import json
 import os
@@ -58,6 +63,7 @@ def _urlopen_with_retry(req, timeout=30, max_retries=3, base_delay=1.0):
                 time.sleep(delay)
                 continue
             raise
+    # Should be unreachable — every path above either returns or raises.
     raise RuntimeError("urlopen retry loop exhausted without returning or raising") from last_exc
 
 
@@ -75,23 +81,54 @@ def jira_get(base_url, path, auth):
         raise Exception("Jira API %d on %s: %s" % (e.code, path, body)) from None
 
 
-def jira_search_all(base_url, auth, jql, fields):
-    """Run a JQL search with automatic pagination. Returns all matching issues.
+def jira_post(base_url, path, auth, data):
+    """POST JSON to the Jira API and return the parsed response (or None)."""
+    req_body = json.dumps(data).encode()
+    req = urllib.request.Request(
+        base_url + path,
+        data=req_body,
+        headers={
+            "Authorization": "Basic " + auth,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            response_body = resp.read()
+            if response_body:
+                return json.loads(response_body)
+            return None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise Exception("Jira API %d on POST %s: %s" % (e.code, path, body)) from None
+
+
+def jira_search_all(base_url, auth, jql, fields, limit=None):
+    """Run a JQL search with automatic pagination. Returns matching issues
+    (or up to `limit` if supplied — pagination stops once limit is reached).
 
     Supports both cursor-based pagination (nextPageToken/isLast, used by
     Jira API v3 /search/jql) and offset-based pagination (total/startAt).
     """
     encoded_jql = urllib.parse.quote(jql, safe="")
-    path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s" % (encoded_jql, fields)
+    page_size = min(50, limit) if limit else 50
+    path = "/rest/api/3/search/jql?jql=%s&maxResults=%d&fields=%s" % (encoded_jql, page_size, fields)
     data = jira_get(base_url, path, auth)
 
     issues = data.get("issues", [])
+    if limit and len(issues) >= limit:
+        return issues[:limit]
 
     if "nextPageToken" in data:
         while not data.get("isLast", True):
+            if limit and len(issues) >= limit:
+                break
             token = data["nextPageToken"]
-            next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&fields=%s&nextPageToken=%s" % (
-                encoded_jql, fields, urllib.parse.quote(token, safe=""),
+            remaining_page = min(50, limit - len(issues)) if limit else 50
+            next_path = "/rest/api/3/search/jql?jql=%s&maxResults=%d&fields=%s&nextPageToken=%s" % (
+                encoded_jql, remaining_page, fields, urllib.parse.quote(token, safe=""),
             )
             data = jira_get(base_url, next_path, auth)
             new_issues = data.get("issues", [])
@@ -99,13 +136,16 @@ def jira_search_all(base_url, auth, jql, fields):
                 print("WARNING: Cursor pagination returned empty page at %d issues, stopping" % len(issues), file=sys.stderr)
                 break
             issues.extend(new_issues)
-        return issues
+        return issues[:limit] if limit else issues
 
     total = data.get("total", len(issues))
     while len(issues) < total:
+        if limit and len(issues) >= limit:
+            break
         before = len(issues)
-        next_path = "/rest/api/3/search/jql?jql=%s&maxResults=50&startAt=%d&fields=%s" % (
-            encoded_jql, len(issues), fields
+        remaining_page = min(50, limit - len(issues)) if limit else 50
+        next_path = "/rest/api/3/search/jql?jql=%s&maxResults=%d&startAt=%d&fields=%s" % (
+            encoded_jql, remaining_page, len(issues), fields
         )
         next_data = jira_get(base_url, next_path, auth)
         issues.extend(next_data.get("issues", []))
@@ -113,7 +153,7 @@ def jira_search_all(base_url, auth, jql, fields):
             print("WARNING: Pagination stalled at %d/%d issues, stopping" % (len(issues), total), file=sys.stderr)
             break
 
-    return issues
+    return issues[:limit] if limit else issues
 
 
 def jira_get_changelog(base_url, auth, issue_key):
@@ -173,7 +213,13 @@ def jira_get_dev_summary(base_url, auth, issue_numeric_id):
 
 
 def jira_get_comments(base_url, auth, issue_key):
-    """Fetch comments for an issue."""
+    """Fetch comments for an issue.
+
+    Returns a list of comment dicts with:
+        - author: displayName
+        - created: timestamp
+        - body_text: plain text extracted from ADF body (via adf_to_text)
+    """
     path = "/rest/api/3/issue/%s/comment?maxResults=100&orderBy=created" % issue_key
     data = jira_get(base_url, path, auth)
     comments = []
@@ -188,7 +234,12 @@ def jira_get_comments(base_url, auth, issue_key):
 
 
 def adf_to_text(adf):
-    """Convert Atlassian Document Format JSON to plain text."""
+    """Convert Atlassian Document Format JSON to plain text.
+
+    Handles the common doc-root case used by Jira comment / description bodies.
+    For richer structure-preserving conversion (headings, hardBreak, list-item
+    bullets, trailing paragraph newlines), use `adf_to_text_rich` instead.
+    """
     if not adf or not isinstance(adf, dict):
         return ""
     parts = []
@@ -218,6 +269,46 @@ def adf_to_text(adf):
         elif node_type == "listItem":
             parts.append(adf_to_text(node))
     return "\n".join(parts)
+
+
+def adf_to_text_rich(node):
+    """Recursively walk an ADF node tree and return plain text.
+
+    Differs from `adf_to_text`: handles heading / hardBreak / rule, adds
+    trailing newlines after block nodes, and prefixes list items with "- ".
+    Used by incident-kb for Jira description rendering where the heading
+    structure should survive the conversion.
+    """
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return node
+
+    if not isinstance(node, dict):
+        return ""
+
+    node_type = node.get("type", "")
+    text = node.get("text", "")
+
+    if text:
+        return text
+
+    parts = []
+    for child in node.get("content", []):
+        parts.append(adf_to_text_rich(child))
+
+    joined = "".join(parts)
+
+    if node_type in ("paragraph", "heading", "blockquote", "rule"):
+        return joined.strip() + "\n\n"
+    if node_type == "hardBreak":
+        return "\n"
+    if node_type == "listItem":
+        return "- " + joined.strip() + "\n"
+    if node_type in ("bulletList", "orderedList"):
+        return joined + "\n"
+
+    return joined
 
 
 def ensure_tmp_dir(path):

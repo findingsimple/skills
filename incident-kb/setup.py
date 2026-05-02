@@ -7,6 +7,7 @@ import sys
 
 # Add skill directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _libpath  # noqa: F401
 from confluence_client import load_env, init_auth, confluence_get, confluence_get_children
 from jira_client import jira_get, jira_search_all
 
