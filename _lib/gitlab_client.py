@@ -3,11 +3,13 @@
 
 import json
 import os
+import re
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from _http import urlopen_with_retry
 
 
 def load_gitlab_env():
@@ -35,40 +37,6 @@ def load_gitlab_env():
     return gitlab_url, gitlab_token, gitlab_project_id
 
 
-def _redact_url(url):
-    """Drop the query string from retry logs so keywords/tokens don't leak."""
-    return url.split("?", 1)[0] if url else url
-
-
-def _urlopen_with_retry(req, timeout=30, max_retries=3, base_delay=1.0):
-    """urlopen with retry and exponential backoff for transient errors."""
-    last_exc = None
-    for attempt in range(max_retries + 1):
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            last_exc = e
-            if e.code in (429, 503) and attempt < max_retries:
-                retry_after = e.headers.get("Retry-After")
-                try:
-                    delay = float(retry_after) if retry_after else base_delay * (2 ** attempt)
-                except (ValueError, TypeError):
-                    delay = base_delay * (2 ** attempt)
-                print("HTTP %d, retrying in %.1fs... (%s)" % (e.code, delay, _redact_url(req.full_url)), file=sys.stderr)
-                time.sleep(delay)
-                continue
-            raise
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            last_exc = e
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                print("Network error: %s, retrying in %.1fs... (%s)" % (e, delay, _redact_url(req.full_url)), file=sys.stderr)
-                time.sleep(delay)
-                continue
-            raise
-    raise RuntimeError("urlopen retry loop exhausted without returning or raising") from last_exc
-
-
 def gitlab_get(gitlab_url, path, token):
     """GET a JSON response from the GitLab API."""
     url = gitlab_url + "/api/v4" + path
@@ -77,7 +45,7 @@ def gitlab_get(gitlab_url, path, token):
         headers={"PRIVATE-TOKEN": token, "Accept": "application/json"},
     )
     try:
-        with _urlopen_with_retry(req) as resp:
+        with urlopen_with_retry(req) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
@@ -96,7 +64,7 @@ def gitlab_get_all(gitlab_url, path, token, max_pages=50):
         )
         page_count += 1
         try:
-            with _urlopen_with_retry(req) as resp:
+            with urlopen_with_retry(req) as resp:
                 data = json.loads(resp.read())
                 if isinstance(data, list):
                     results.extend(data)
@@ -126,8 +94,6 @@ def search_mrs_for_issue(gitlab_url, token, project_id, issue_key):
     Returns:
         list of MR dicts matching the issue key
     """
-    import re
-
     matches = []
     search_path = "/projects/%s/merge_requests?search=%s&per_page=20&state=opened" % (
         project_id,

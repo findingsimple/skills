@@ -6,14 +6,15 @@ this module via the per-skill `_libpath.py` shim that prepends ../_lib to
 sys.path.
 """
 
+import base64
 import json
 import os
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import base64
+
+from _http import urlopen_with_retry
 
 
 def load_env(keys):
@@ -32,41 +33,6 @@ def init_auth(env):
     return base_url, auth
 
 
-def _redact_url(url):
-    """Drop the query string from retry logs so keywords/tokens don't leak."""
-    return url.split("?", 1)[0] if url else url
-
-
-def _urlopen_with_retry(req, timeout=30, max_retries=3, base_delay=1.0):
-    """urlopen with retry and exponential backoff for transient errors."""
-    last_exc = None
-    for attempt in range(max_retries + 1):
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            last_exc = e
-            if e.code in (429, 503) and attempt < max_retries:
-                retry_after = e.headers.get("Retry-After")
-                try:
-                    delay = float(retry_after) if retry_after else base_delay * (2 ** attempt)
-                except (ValueError, TypeError):
-                    delay = base_delay * (2 ** attempt)
-                print("HTTP %d, retrying in %.1fs... (%s)" % (e.code, delay, _redact_url(req.full_url)), file=sys.stderr)
-                time.sleep(delay)
-                continue
-            raise
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            last_exc = e
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                print("Network error: %s, retrying in %.1fs... (%s)" % (e, delay, _redact_url(req.full_url)), file=sys.stderr)
-                time.sleep(delay)
-                continue
-            raise
-    # Should be unreachable — every path above either returns or raises.
-    raise RuntimeError("urlopen retry loop exhausted without returning or raising") from last_exc
-
-
 def jira_get(base_url, path, auth):
     """GET a JSON response from the Jira API."""
     req = urllib.request.Request(
@@ -74,7 +40,7 @@ def jira_get(base_url, path, auth):
         headers={"Authorization": "Basic " + auth, "Accept": "application/json"},
     )
     try:
-        with _urlopen_with_retry(req) as resp:
+        with urlopen_with_retry(req) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
