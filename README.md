@@ -21,6 +21,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
 | [support-routing-audit](support-routing-audit/) | `/support-routing-audit [--team <name>] [--start ...] [--end ...]` | Audit support tickets routed to a focus team over a period (default current month) and flag ones that should have gone elsewhere per the configured team charters — with target team, reasoning, and confidence. Focus team and canonical team list are supplied via env vars (no team is hardcoded). Output is a terminal Markdown report ready to paste into a leadership chat. |
+| [support-trends](support-trends/) | `/support-trends --team <name> [--window month\|YYYY-MM\|YYYY-MM-DD..YYYY-MM-DD]` | Build a leadership-grade monthly support trends report for one team. Three sub-agents (themes, support-feedback, synthesise) enrich a deterministic finding set; renderer rejects any claim without a metric and evidence keys. Output is a Markdown report written to the team's Obsidian vault under `Support/Trends/{year}/`, covering volume / themes / charter drift / L2 containment / categorisation / numbers. |
 | [support-ticket-triage](support-ticket-triage/) | `/support-ticket-triage <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
 | [vault-linker](vault-linker/) | `/vault-linker` | Add Obsidian `[[wiki links]]` to existing vault files by scanning for known entities (people, incidents, Jira keys) |
 
@@ -320,6 +321,23 @@ Every state-changing resolution step includes a `⚠️ SAFEGUARDS` block (befor
 - Optional: `SUPPORT_PROJECT_KEY` (scopes similar-ticket JQL), `ROOT_CAUSE_EPICS` (comma-separated Jira keys, validated against `^[A-Z][A-Z0-9_]+-\d+(,...)*$`), `CODE_SEARCH_EXTENSIONS`
 - Notion MCP server connected in Claude Code (optional — used only if `references/` in the codebase doesn't cover the affected area)
 - Read-only: the skill never writes to Jira
+
+### support-trends
+
+Build a monthly Markdown digest of one team's support tickets — volume, themes, charter drift candidates, L2 containment signals, categorisation quality, and resolution-category breakdown — for a leadership audience. Three sub-agents (themes / support-feedback / synthesise) enrich a deterministic finding set produced by `analyze.py`; the report renderer is pure and rejects any claim without a metric and `evidence_keys`.
+
+```bash
+/support-trends --team TeamA                              # previous calendar month
+/support-trends --team TeamA --window 2026-04             # specific month
+/support-trends --team TeamA --window 2026-04-01..2026-04-15  # explicit range
+```
+
+Output lands in `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/{year}/` and a terminal preview at `/tmp/support_trends/report.md`.
+
+**Prerequisites:**
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `OBSIDIAN_TEAMS_PATH`, `SPRINT_TEAMS`, `SUPPORT_PROJECT_KEY` in `~/.zshrc`
+- At least one of `SUPPORT_TEAM_LABEL` or `SUPPORT_TEAM_FIELD_VALUES` (the skill aborts otherwise to avoid querying the entire support project)
+- Optional: `SUPPORT_BOARD_ID` (improves closed-status detection), `CHARTER_TEAMS` (enables charter-drift suggestions)
 
 ### vault-linker
 

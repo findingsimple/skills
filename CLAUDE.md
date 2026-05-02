@@ -93,6 +93,24 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SYNTHESIS_PROMPT.md # Sub-agent prompt for code investigation, classification, and template fill
     jira_client.py      # Jira API client (copied from sprint-pulse — load_env, init_auth, jira_get, jira_search_all, jira_get_comments, adf_to_text)
     fetch.py            # Fetches ticket + linked + similar + root-cause-epic children → /tmp/support_triage/<KEY>.json
+  support-trends/
+    SKILL.md                    # Slash-only orchestration: setup → fetch → analyze → bundle → 3 sub-agents → 3 apply scripts → report
+    THEMES_PROMPT.md            # Sub-agent prompt: tag tickets with kebab-case theme IDs, persist vocabulary across runs
+    SUPPORT_FEEDBACK_PROMPT.md  # Sub-agent prompt: charter drift / L2 containment / categorisation quality
+    SYNTHESISE_PROMPT.md        # Sub-agent prompt: pick + frame top findings; emits schema-locked JSON
+    jira_client.py              # Jira API client (load_env, init_auth, jira_search_all, jira_get_changelog, jira_get_comments, adf_to_text, ensure_tmp_dir, atomic_write_json)
+    concurrency.py              # Pipeline lock + session token + stale-state clear
+    setup.py                    # Validates env, resolves --team / --window, writes setup.json
+    fetch.py                    # Three JQLs (created/resolved/backlog) + parallel changelog+comment enrichment for current and prior windows
+    analyze.py                  # Deterministic findings (volume, time-to-engineer, reopen, quick-close, never-do, charter, categorisation, l3-bounce) + bucket math
+    thresholds.py               # Per-finding-kind threshold dicts (centralises tuning)
+    bundle.py                   # Builds the single shared bundle.json consumed by themes + support-feedback agents
+    ticket_record.py            # Per-ticket record shape used in bundle (untrusted-field wrapping)
+    narrative_notes.py          # Pressure-release valve for non-finding context (calendar overlap etc.)
+    apply_themes.py             # Validates themes results.json, persists vocabulary, merges into analysis.json
+    apply_support_feedback.py   # Validates support-feedback results.json, merges into analysis.json
+    apply_synthesise.py         # Validates synthesise results.json (evidence_keys, audience, confidence; word-boundary truncation), merges into analysis.json
+    report.py                   # Pure renderer: writes Markdown to /tmp/ + Obsidian vault under Support/Trends/{year}/
   vault-linker/
     SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
     link.py             # Scans vault for entities, adds [[wiki links]] to existing files, generates index pages
@@ -182,23 +200,24 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
 | `STATEMENTS_PATH` | bank-statement-to-markdown |
-| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit |
-| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit |
-| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit |
-| `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse, support-routing-audit, root-cause-suggest |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
+| `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse, support-routing-audit, root-cause-suggest, support-trends |
 | `GITLAB_URL` | sprint-metrics, sprint-pulse |
 | `GITLAB_TOKEN` | sprint-metrics, sprint-pulse |
 | `GITLAB_PROJECT_ID` | sprint-metrics, sprint-pulse |
 | `TRIAGE_BOARD_ID` | root-cause-triage |
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
 | `TRIAGE_OUTPUT_PATH` | root-cause-triage |
-| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage, support-routing-audit, root-cause-suggest |
+| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage, support-routing-audit, root-cause-suggest, support-trends |
 | `CODEBASE_PATH` | support-ticket-triage (absolute path to codebase for sub-agent investigation) |
 | `CODE_SEARCH_EXTENSIONS` | support-ticket-triage (optional; comma-separated file extensions, default `rb,ts,tsx,go,py,js,jsx,rs,java`) |
 | `SUPPORT_BOARD_ID` | sprint-pulse |
-| `SUPPORT_TEAM_LABEL` | sprint-pulse, support-routing-audit |
-| `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse, support-routing-audit |
-| `CHARTER_TEAMS` | support-routing-audit (pipe-delimited canonical team names, optional comma-separated aliases per slot) |
+| `SUPPORT_BOARD_ID` | sprint-pulse, support-trends |
+| `SUPPORT_TEAM_LABEL` | sprint-pulse, support-routing-audit, support-trends |
+| `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse, support-routing-audit, support-trends |
+| `CHARTER_TEAMS` | support-routing-audit, support-trends (pipe-delimited canonical team names, optional comma-separated aliases per slot) |
 | `CHARTERS_PATH` | support-routing-audit (optional override; must resolve under `OBSIDIAN_TEAMS_PATH` or the skill dir) |
 | `RETRO_PARENT_PAGE_ID` | incident-kb |
 | `RETRO_TEMPLATE_PAGE_ID` | incident-kb |
