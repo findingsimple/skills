@@ -1,0 +1,309 @@
+---
+name: support-trends
+description: >-
+  Generates a monthly (or custom-window) support-ticket trends report for one
+  team — a Findings section the engineering manager can take to exec, a
+  To Support sub-section with charter / containment / categorisation feedback,
+  and an evidence-linked themes catalog backed by the underlying numbers. Use
+  when the user asks for support trends, monthly support analysis, or wants
+  evidence to take into a leadership conversation about support volume or L2
+  performance.
+disable-model-invocation: true
+argument-hint: "[--team <name>] [--window <month|YYYY-MM|YYYY-MM-DD..YYYY-MM-DD>] [--no-prior] [--no-themes] [--dry-run]"
+allowed-tools: Bash Read Glob AskUserQuestion Agent
+---
+
+# Support Trends (v2)
+
+Builds a deterministic markdown report that aggregates support tickets for one team over a chosen window, enriched by three sub-agents running in parallel-then-merge:
+
+1. **themes** — tags each in-window ticket with 1–3 kebab-case theme IDs; vocabulary persists across runs
+2. **support-feedback** — surfaces what L2 should do differently: charter drift, containment opportunities, categorisation quality
+3. **synthesise** — final pass that picks the top findings, groups by audience (exec / support), and writes a one-line `so_what` per finding. Schema-locked output: every claim has a metric and `evidence_keys`; the report renderer rejects records without them.
+
+The report lands in the team's Obsidian vault under `Support/Trends/{year}/`.
+
+**Role mapping** (don't get this wrong): `reporter` is the L2 support staff member who logged the ticket on the customer's behalf (tickets typically only reach engineering via L2); `assignee` is the engineer; `cf[10600]` is the team the ticket is currently routed to.
+
+## Why v2 (vs v1, preserved on `support-trends-v1`)
+
+- **Faster**: themes and support-feedback agents run in parallel, not sequentially.
+- **Less drift**: one shared bundle (`bundle.py` → `bundle.json`) instead of three near-duplicate per-stage builders.
+- **More trustworthy report**: deterministic step crystallises findings; sub-agents enrich; synthesise picks + frames; renderer renders. No agent invents claims at render time.
+- **Smaller surface**: triage cross-ref dropped; charter agent rebranded to "support-feedback" with three explicit classes.
+
+## Environment variables
+
+Reuses sprint-pulse's variables — no new vars beyond what v1 already used.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `JIRA_BASE_URL` | Yes | Jira instance URL |
+| `JIRA_EMAIL` | Yes | Atlassian email for Basic auth |
+| `JIRA_API_TOKEN` | Yes | Atlassian API token |
+| `OBSIDIAN_TEAMS_PATH` | Yes | Teams subdirectory in Obsidian vault |
+| `SPRINT_TEAMS` | Yes | Pipe-delimited team config: `vault_dir\|project_key\|board_id\|display_name` |
+| `SUPPORT_PROJECT_KEY` | Yes | Jira project key for the support project |
+| `SUPPORT_BOARD_ID` | No | Used to detect closed-status set; falls back to keyword detection |
+| `SUPPORT_TEAM_LABEL` | One required | Per-team labels (matches `SPRINT_TEAMS` order); CSV-OR per slot |
+| `SUPPORT_TEAM_FIELD_VALUES` | One required | Per-team values for the Team custom field `cf[10600]` |
+| `CHARTER_TEAMS` | No | Canonical team names for charter-drift detection (reuses `support-routing-audit` format) |
+
+If neither support team filter is set the skill aborts to avoid querying the entire support project across all teams.
+
+## Argument allow-lists
+
+For JQL/URL safety, every interpolated argument is validated against an anchored regex (`\A...\Z` + `re.ASCII`) before it reaches a JQL string.
+
+`setup.py` (window resolution):
+
+| Arg | Pattern | Resolves to |
+|-----|---------|-------------|
+| `--window month` | literal | previous calendar month |
+| `--window YYYY-MM` | `\A\d{4}-\d{2}\Z` | that calendar month |
+| `--window YYYY-MM-DD..YYYY-MM-DD` | `\A\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}\Z` | explicit start/end |
+| `--team` | `\A[A-Za-z][A-Za-z0-9 _\-]{0,63}\Z` | one of `SPRINT_TEAMS` slots |
+
+`fetch.py`: same validators as v1 (`--support-project-key`, `--support-label`, `--support-team-field`, `--start`, `--end`, `--prior-start`, `--prior-end`).
+
+## Pipeline
+
+```
+setup ─► fetch ─► analyze ─► bundle ─┬─► themes-agent ─────────┐
+                                     └─► support-feedback-agent ─┴─► synthesise-agent ─► report
+                                         (these two run in parallel)
+```
+
+The themes and support-feedback sub-agents read `/tmp/support_trends/bundle.json` via `cat` (not the Read tool). The synthesise sub-agent reads `/tmp/support_trends/analysis.json` directly (which by Step 6 has the validated themes + support-feedback results merged in by the apply scripts). All three write results to `/tmp/support_trends/{themes,support_feedback,synthesise}/results.json`.
+
+### Step 1 — Setup
+
+```bash
+python3 ~/.claude/skills/support-trends/setup.py --team {TEAM} --window {WINDOW}
+```
+
+Validates env, resolves the team slot, resolves the window. Default window when `--window` is omitted: previous calendar month. Writes `/tmp/support_trends/setup.json`.
+
+### Step 2 — Fetch
+
+```bash
+python3 ~/.claude/skills/support-trends/fetch.py
+```
+
+Reads `setup.json`, runs the three JQLs (created-in-window, resolved-in-window-but-created-earlier, open-backlog-at-window-start), per-ticket changelog enrichment, and writes the merged ticket bundle to `/tmp/support_trends/data.json`. Includes `resolution_category` (customfield_11695).
+
+Every JQL/window argument defaults from `setup.json`; pass `--team-vault-dir`, `--support-project-key`, `--support-label`, `--support-team-field`, `--start`, `--end`, `--prior-start`, `--prior-end`, or `--no-prior` only when overriding for an ad-hoc re-run.
+
+### Step 3 — Analyze (deterministic findings)
+
+```bash
+python3 ~/.claude/skills/support-trends/analyze.py
+```
+
+Runs all deterministic checks and emits **crystallised findings**, not raw counters. Each finding has the shape:
+
+```json
+{
+  "kind": "volume_change|time_to_engineer_regression|reopen_spike|quick_close_pattern|reassign_out_burst|never_do_rate|categorisation_blank|l3_bounced_back",
+  "claim": "In-team ticket volume up 38% vs prior window",
+  "metric": "16 → 22",
+  "delta_pct": 37.5,
+  "evidence_keys": ["PROJ-123", ...],
+  "severity": "high|medium|low",
+  "audience_hint": "exec|support"
+}
+```
+
+Writes `/tmp/support_trends/analysis.json` (findings + raw windows for the renderer's number tables).
+
+### Step 4 — Bundle
+
+```bash
+python3 ~/.claude/skills/support-trends/bundle.py
+```
+
+Builds the **single shared bundle** consumed by all three sub-agents. Per-ticket records use `ticket_record.ticket_record()`. Wraps free-text fields as `_untrusted`. Writes `/tmp/support_trends/bundle.json`.
+
+### Step 5 — Themes + support-feedback agents (parallel)
+
+Spawn **both sub-agents in a single message with two Agent tool calls** so they run concurrently.
+
+**Themes sub-agent** — `subagent_type: general-purpose`. Prompt: read `~/.claude/skills/support-trends/THEMES_PROMPT.md` (full file contents), then append:
+```
+Read /tmp/support_trends/bundle.json with cat, tag each ticket per the rules,
+and write /tmp/support_trends/themes/results.json. The bundle has {N} in-window tickets.
+```
+
+**Support-feedback sub-agent** — `subagent_type: general-purpose`. Prompt: read `~/.claude/skills/support-trends/SUPPORT_FEEDBACK_PROMPT.md`, then append:
+```
+Read /tmp/support_trends/bundle.json with cat, evaluate each ticket against the
+three feedback classes (charter drift, L2 containment, categorisation quality),
+and write /tmp/support_trends/support_feedback/results.json.
+```
+
+Wait for both to complete, then merge:
+
+```bash
+python3 ~/.claude/skills/support-trends/apply_themes.py
+python3 ~/.claude/skills/support-trends/apply_support_feedback.py
+```
+
+Both apply scripts validate IDs, recompute counts from validated records, and persist the themes vocabulary canonically to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/.themes_vocabulary.json` (with a per-team `/tmp/support_trends/themes_vocabulary_{vault_dir}.json` legacy fallback for first-run recovery). If either sub-agent fails or its `results.json` is missing, the renderer continues without that section: themes shows `_[unavailable — themes sub-agent did not run or produced no themes]_`, support-feedback shows `_No support-feedback signals this window._`.
+
+### Step 6 — Synthesise
+
+Spawn **one** `general-purpose` sub-agent. Prompt: read `~/.claude/skills/support-trends/SYNTHESISE_PROMPT.md`, then append:
+```
+Read /tmp/support_trends/analysis.json with cat (the apply scripts have
+already merged the validated themes + support_feedback agent outputs into
+this file under the `themes` and `support_feedback` keys). Pick the top
+findings, group by audience (exec / support), write one-line so_what per finding,
+and emit /tmp/support_trends/synthesise/results.json per the schema.
+```
+
+Strict schema (rejected by `apply_synthesise.py` if violated):
+
+```json
+{
+  "findings": [
+    {
+      "claim": "...",
+      "metric": "...",
+      "evidence_keys": ["PROJ-123", ...],
+      "audience": ["exec"|"support"|"both"],
+      "so_what": "...",
+      "confidence": "high|medium|low"
+    }
+  ]
+}
+```
+
+```bash
+python3 ~/.claude/skills/support-trends/apply_synthesise.py
+```
+
+### Step 7 — Report
+
+```bash
+python3 ~/.claude/skills/support-trends/report.py
+```
+
+Pure renderer. Reads `setup.json` and `analysis.json` (the apply scripts in Steps 5–6 already merged the validated themes / support_feedback / synthesise / narrative_notes content into `analysis.json` — so report.py touches only those two files). Writes:
+
+- `/tmp/support_trends/report.md` (terminal preview)
+- `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/{year}/Support Trends — {team} — {window}.md`
+
+Window naming: `{YYYY-MM}` for monthly default, `{start}_to_{end}` for custom.
+
+### Report shape
+
+```markdown
+---
+title: Support Trends — {team} — {window}
+team: "[[{vault_dir}]]"
+window: {start} → {end}
+created: {YYYY-MM-DD}
+tags: [support-trends]
+---
+
+# Findings
+
+## Context
+- _{narrative_note text — only present when narrative_notes fired (e.g. holiday window overlap)}_
+
+- **{claim}** (`{metric}`) _(confidence)_ — [[PROJ-123]] [[PROJ-234]] ...
+  → {so_what}
+- ...
+
+## To Support
+- **{claim — exec+support audience}** (`{metric}`) _(confidence)_ — [[PROJ-...]] ...
+  → {so_what}
+
+### Charter drift candidates
+- [[PROJ-...]] — suggested: **{team}** _(confidence)_
+  → {reason}
+
+### L2 containment signals
+- **{pattern}** _(confidence)_ — [[PROJ-...]]
+  → {gap}
+
+### Categorisation quality
+- [[PROJ-...]] _(confidence)_ — {issue}
+  → suggested: `{category}`
+
+# Themes
+| Theme | Current | Prior | Δ | Tickets |
+|---|---:|---:|---:|---|
+| integration-sync-vendor-x | 12 | 6 | +6 | [[PROJ-...]] ... |
+
+# Numbers
+
+## Volume by bucket
+| Bucket | Created | Resolved | Net | Backlog end |
+
+## Resolution Category breakdown
+| Category | Count | Share |
+
+## L2 / triage signals
+| Signal | Value |
+| (time-to-first-engineer p50/p90, never-assigned, reopen, quick-close, reassign-out, won't-do) |
+```
+
+No section emits prose beyond `so_what` lines from the synthesise agent. Number tables are direct renders of `analysis.json`.
+
+## Tuning thresholds
+
+All deterministic findings emitted by `analyze.derive_findings()` read their trigger constants from `thresholds.py`. Each finding kind has its own dict — edit the values to make findings fire more or less often, no other code changes needed.
+
+| Finding kind | Threshold dict | What it tunes |
+|---|---|---|
+| `volume_change` | `thresholds.VOLUME_CHANGE` | `pct` (% MoM change), `abs` (current-window count floor), `severity_high` (high-severity break) |
+| `time_to_engineer_regression` | `thresholds.TIME_TO_ENGINEER` | `pct`, `abs_floor_hours` |
+| `reopen_spike` | `thresholds.REOPEN` | `pp`, `abs` |
+| `quick_close_pattern` | `thresholds.QUICK_CLOSE` | `pp`, `abs` |
+| `reassign_out_burst` | `thresholds.REASSIGN_OUT` | `abs`, `severity_high` |
+| `never_do_rate` | `thresholds.NEVER_DO` | `ratio` (multiple of prior count), `abs` |
+| `categorisation_blank` | `thresholds.CATEGORISATION_BLANK` | `pct` (share of resolved-in-window), `abs_resolved_floor`, `severity_high` |
+| `l3_bounced_back` | `thresholds.L3_BOUNCED` | `abs`, `severity_high` |
+
+A finding kind with no prior-window data available (e.g. when `--no-prior` was passed) silently skips its check rather than firing on incomplete data.
+
+## Narrative notes (the pressure-release valve)
+
+Not every useful sentence in the report is a finding. Sometimes the right thing to add is a single line of *context* — "this window overlaps the late-December office-closure period, expect lower volume" — which has no metric, no `evidence_keys`, and doesn't fit the finding taxonomy.
+
+`narrative_notes.py` is the escape hatch. Each note carries explicit `derived_from` provenance, ships in `analysis.json` alongside `findings`, and renders as italic prose under a `## Context` block at the top of the Findings section.
+
+**When to add a new note generator** (in `narrative_notes.py`):
+- A recurring kind of contextual line you'd want every report to consider, not a one-off observation.
+- Has no metric to anchor — if it has a metric, it's a finding kind, add it to `analyze.derive_findings()` instead.
+- Cheap to compute deterministically — if it needs an LLM, it belongs in a sub-agent, not here.
+
+**When NOT to add a note generator**: one-off observations belong in the synthesise agent's `so_what` for the relevant finding. The narrative-notes file is for *patterns* the report should always consider.
+
+Currently shipped generators:
+- `_calendar_context_notes` — fires when current OR prior window overlaps Dec 22 – Jan 5 (US/AU office-closure period). Distinguishes "current is depressed" from "prior was depressed → growth comparisons may overstate the shift".
+
+The synthesise agent sees `narrative_notes` and may reference them in `so_what` to qualify confidence — but is told not to restate them as findings (the renderer already shows them).
+
+## Concurrency & session model
+
+The pipeline is many separately-invoked Python scripts sharing `/tmp/support_trends/`. Three layers of protection prevent state corruption:
+
+1. **Advisory lock** (`concurrency.acquire` / `release`) — held setup→report. A second orchestrator run started while one is in flight gets a clear "another run in progress" error rather than silently clobbering files. Auto-reclaimed after 4 hours of staleness (a single sub-agent has occasionally run that long).
+
+2. **Session token** (`concurrency.verify_session`) — `setup.py` generates a UUID, writes it into both the lock file (4th `|`-delimited field) and `setup.json.session`. Every mid-pipeline script (`fetch`, `analyze`, `bundle`, `apply_themes`, `apply_support_feedback`, `apply_synthesise`, `report`) calls `verify_session()` at the top of `main()` and refuses to proceed if the lock is missing, stale, or its session UUID doesn't match `setup.json`. This catches three foot-guns:
+   - Running an intermediate script standalone (no orchestrator → no lock → refuse).
+   - Re-running an intermediate script after the lock auto-reclaimed mid-pipeline (session mismatch → refuse).
+   - Cross-team bleed where Team B's lock somehow got paired with Team A's stale `setup.json` (session mismatch → refuse).
+
+3. **Stale-state clear** (`concurrency.clear_stale_state`) — `setup.py` calls this immediately after `acquire()` succeeds, removing the previous run's `bundle.json`, `analysis.json`, `data*.json`, `report.md`, and the `themes/` / `support_feedback/` / `synthesise/` subdirectories. Without this, two consecutive runs share `/tmp/`. If Team B's themes sub-agent crashes before writing `results.json`, `apply_themes` would otherwise pick up Team A's leftover `results.json` and merge it into Team B's `analysis.json`. Validators reject hallucinated keys but two teams sharing a project (label-distinguished) can have overlapping in-window keys that bleed through silently. **Kept across runs**: the lock itself, `.jql_changed_predicate` cache, themes vocabulary (per-team).
+
+The `report.py` step releases the lock in a `try/finally` so every exit path (success, `--dry-run`, missing `OBSIDIAN_TEAMS_PATH`) cleans up — no 4-hour wait required.
+
+## Failure modes
+
+- **Sub-agent timeout / failure**: section omitted with `[unavailable]` notice; rest of report renders.
+- **Synthesise rejected (or never wrote `synthesise/results.json`)**: report falls back to rendering raw deterministic findings filtered to `audience_hint == "exec"` under the Findings header. Support-audience deterministic findings are NOT rendered in this fallback — only the support-feedback agent output (charter drift / containment / categorisation) lands under To Support.
+- **Empty window** (no tickets): report renders headers + "No tickets in window" notice.
+- **Themes vocabulary drift**: vocabulary file is per-team; canonical location is `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Trends/.themes_vocabulary.json`. Delete that file to reseed; the legacy `/tmp/support_trends/themes_vocabulary_{vault_dir}.json` is only used as a first-run fallback.
