@@ -94,15 +94,6 @@ def _escape_table_cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
-def _section_or_unavailable(title, rendered):
-    """Emit the section header even when the underlying content is empty —
-    explicit '[unavailable]' beats silently dropping a section the reader
-    might be looking for."""
-    if rendered:
-        return "%s\n%s" % (title, rendered)
-    return "%s\n_[unavailable — sub-agent failed or section had no content]_\n" % title
-
-
 # ---------------------------------------------------------------------------
 # Section: Findings + To Support
 # ---------------------------------------------------------------------------
@@ -161,6 +152,28 @@ def render_findings_section(analysis, base_url):
     cd = sf.get("charter_drift") or []
     cont = sf.get("l2_containment_signals") or []
     cat = sf.get("categorisation_quality") or []
+
+    # Suppress synthesise support-only findings whose evidence_keys are fully
+    # contained in the dedicated charter_drift section — otherwise the same two
+    # tickets render twice (once as a To Support bullet, once under
+    # ### Charter drift candidates) with overlapping prose. A finding tagged
+    # ["exec","support"] keeps its exec bullet regardless; we only deduplicate
+    # the ["support"]-only restatement.
+    if cd and support_items:
+        cd_keys = set()
+        for rec in cd:
+            for k in (rec.get("ticket_keys") or []):
+                if isinstance(k, str):
+                    cd_keys.add(k)
+        kept = []
+        for f in support_items:
+            audience = f.get("audience") or []
+            if audience == ["support"]:
+                ev = [k for k in (f.get("evidence_keys") or []) if isinstance(k, str)]
+                if ev and all(k in cd_keys for k in ev):
+                    continue  # restates charter drift; subsection will carry it
+            kept.append(f)
+        support_items = kept
 
     rendered_any = False
     if support_items:
@@ -267,7 +280,48 @@ def render_themes_section(analysis, base_url):
         sample_links = " ".join(_key_link(k, base_url) for k in sample if _key_link(k, base_url))
         out.append("| `%s` | %d | %d | %s | %s |" % (
             _escape_table_cell(tid), cur, prior, delta_cell, sample_links))
+
+    family_rows = _theme_family_rollups(vocab)
+    if family_rows:
+        out.append("")
+        out.append("**Theme families** _(rollup of related theme IDs sharing a prefix)_")
+        out.append("")
+        out.append("| Family | Current | Prior | Δ | Members |")
+        out.append("|---|---:|---:|---:|---|")
+        for row in family_rows:
+            delta = row["current"] - row["prior"]
+            delta_cell = "+%d" % delta if delta > 0 else (str(delta) if delta < 0 else "0")
+            members = ", ".join("`%s`" % _escape_table_cell(m) for m in row["members"])
+            out.append("| `%s-*` | %d | %d | %s | %s |" % (
+                _escape_table_cell(row["prefix"]),
+                row["current"], row["prior"], delta_cell, members))
     return "\n".join(out) + "\n"
+
+
+def _theme_family_rollups(vocab):
+    """Aggregate vocab entries by their 2-segment prefix (e.g. `pms-sync` from
+    `pms-sync-yardi`). A family rolls up when 2+ themes share the prefix AND
+    the prefix has at least 3 segments total in at least one member (so we
+    don't produce trivial families like `login-access` rolling up just one
+    theme). Returns a list of rollup dicts sorted by combined volume.
+    """
+    buckets = {}
+    for entry in vocab:
+        tid = entry.get("id") or ""
+        parts = tid.split("-")
+        if len(parts) < 3:
+            continue  # need at least prefix-prefix-leaf to form a family
+        prefix = "-".join(parts[:2])
+        bucket = buckets.setdefault(prefix, {"prefix": prefix, "current": 0,
+                                              "prior": 0, "members": []})
+        bucket["current"] += entry.get("count_current") or 0
+        bucket["prior"] += entry.get("count_prior") or 0
+        bucket["members"].append(tid)
+    rollups = [b for b in buckets.values() if len(b["members"]) >= 2]
+    rollups.sort(key=lambda b: -(b["current"] + b["prior"]))
+    for b in rollups:
+        b["members"].sort()
+    return rollups
 
 
 # ---------------------------------------------------------------------------

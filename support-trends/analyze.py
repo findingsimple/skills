@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Support trends v2 analyzer: deterministic breakdowns + L2 signals + crystallised
+"""Support trends v2 analyzer: deterministic L2 signals + crystallised
 findings → /tmp/support_trends/analysis.json.
 
 Findings are emitted at the top level of the JSON output. Each one has a
@@ -12,7 +12,7 @@ import json
 import os
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import concurrency
@@ -140,14 +140,13 @@ def to_date(dt):
     return dt.date() if hasattr(dt, "date") else dt
 
 
-def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team_field_labels, team_field_canonical=None):
+def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team_field_labels):
     """Compute the L2/triage quality signals over the in-window-created subset.
 
     `team_field_labels` is a set of acceptable display-name strings for the
     Team custom field — used as a fallback when UUID resolution failed for some
     of them. Pass an empty set if all resolution succeeded (UUIDs are then
-    authoritative). `team_field_canonical` is the canonical display name to
-    render in transition paths when an alias matches (e.g. SECO → ACE rename).
+    authoritative).
 
     Returns a dict ready for serialisation. All "hours" values are
     *adjusted hours* (calendar × 5/7), NOT real working calendar hours —
@@ -155,14 +154,6 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
     """
     in_window = [t for t in tickets if _created_in_window(t, window_start_dt, window_end_dt)]
     team_field_labels = set(team_field_labels or [])
-    focus_aliases_lower = {x.lower() for x in team_field_labels}
-
-    def _canon(name):
-        if not name:
-            return "(none)"
-        if name.lower() in focus_aliases_lower and team_field_canonical:
-            return team_field_canonical
-        return name
 
     first_assignment_hours = []  # adjusted hours
     never_assigned = []
@@ -176,11 +167,7 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
     quick_close = []
     reassign_out = []
     reassign_out_24h_calendar = []
-    engineer_unassigned = []
     wont_do = []
-    bouncing = []          # tickets with >= 3 Team-field transitions
-    returned_to_focus = [] # tickets where focus → other → ... → focus
-    transitions_count_by_key = {}  # key -> int, used to enrich reassign_out items
 
     for t in in_window:
         created_dt = parse_dt(t.get("created"))
@@ -293,120 +280,6 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
                 continue
             break
 
-        # ---- Full Team-field transition walk (independent of reassign_out) ----
-        # The reassign_out block above intentionally captures only the FIRST
-        # focus→non-focus move per ticket. Here we walk every Team transition
-        # to spot tickets that bounce between teams (≥3 hops) and tickets that
-        # were handed off and returned to the focus team. Both are stronger
-        # "charter ambiguity" signals than a one-shot handoff.
-        all_team_transitions = []
-        for entry in cl:
-            entry_dt = parse_dt(entry.get("created"))
-            for item in entry.get("items", []) or []:
-                if (item.get("field") or "").lower() != "team":
-                    continue
-                fr_id = item.get("from") or ""
-                to_id = item.get("to") or ""
-                fr_str = (item.get("from_string") or "").strip()
-                to_str = (item.get("to_string") or "").strip()
-                fr_focus = (fr_id in team_uuids) or (fr_str in team_field_labels)
-                to_focus = (to_id in team_uuids) or (to_str in team_field_labels)
-                # Skip alias-to-alias renames (e.g. SECO → ACE) — same team.
-                if fr_focus and to_focus:
-                    continue
-                all_team_transitions.append({
-                    "dt": entry_dt,
-                    "from": fr_str,
-                    "to": to_str,
-                    "from_focus": fr_focus,
-                    "to_focus": to_focus,
-                    # A transition to/from "(none)" — i.e. the Team field was
-                    # cleared or set from null — is not a *team-to-team* hop.
-                    # Counted toward path/display history but excluded from
-                    # the bouncing threshold below so a path like
-                    # ACE → (none) → ACE doesn't register as a 3-team bounce.
-                    "is_real_team_hop": bool(fr_str) and bool(to_str),
-                })
-        # Real-hop count: same exclusion as the bouncing threshold below.
-        transitions_count_by_key[t["key"]] = sum(
-            1 for s in all_team_transitions if bool(s["from"]) and bool(s["to"]))
-
-        if all_team_transitions:
-            # Build a path string starting from the FIRST transition's "from"
-            # so the reader can see where the ticket originated. Append "to"
-            # for each step, plus a "(currently)" marker on the final node.
-            path_nodes = [_canon(all_team_transitions[0]["from"])]
-            for step in all_team_transitions:
-                path_nodes.append(_canon(step["to"]))
-            current_team = (t.get("team_field_name") or "").strip()
-            if current_team:
-                path_nodes[-1] = path_nodes[-1] + " (currently)" if path_nodes[-1] != "(none)" else _canon(current_team) + " (currently)"
-            path_str = " → ".join(path_nodes)
-
-            first_dt = all_team_transitions[0]["dt"]
-            last_dt = all_team_transitions[-1]["dt"]
-            span_h = calendar_hours_between(first_dt, last_dt) if (first_dt and last_dt) else None
-
-            # Returned to focus: any focus→other-real-team event followed by
-            # an other-real-team→focus event. Excludes "(none)" both ways —
-            # clearing the Team field then setting it back is bookkeeping,
-            # not another team explicitly handing the ticket back.
-            saw_focus_exit = False
-            came_back = False
-            for step in all_team_transitions:
-                if not step.get("is_real_team_hop"):
-                    continue
-                if step["from_focus"] and not step["to_focus"]:
-                    saw_focus_exit = True
-                elif saw_focus_exit and step["to_focus"] and not step["from_focus"]:
-                    came_back = True
-                    break
-
-            # Count only real team-to-team hops for the bouncing threshold —
-            # transitions where the Team field was cleared (to "(none)") or
-            # set from null are bookkeeping, not cross-team movement.
-            real_hop_count = sum(1 for s in all_team_transitions if s.get("is_real_team_hop"))
-            base = {
-                "key": t["key"],
-                "summary": t.get("summary", ""),
-                "reporter": t.get("reporter", ""),
-                "transitions_count": real_hop_count,
-                "raw_transitions_count": len(all_team_transitions),
-                "path": path_str,
-                "current_team": current_team or "(unrouted)",
-                "total_bounce_span_calendar_hours": round(span_h, 1) if span_h is not None else None,
-                "returned_to_focus": came_back,
-            }
-            if real_hop_count >= 3:
-                bouncing.append(base)
-            if came_back:
-                returned_to_focus.append(base)
-
-        # Engineer un-assigned: assignee → null after being non-null.
-        seen_assigned = False
-        for entry in cl:
-            entry_dt = parse_dt(entry.get("created"))
-            for item in entry.get("items", []) or []:
-                if item.get("field") != "assignee":
-                    continue
-                fr = (item.get("from_string") or "").strip()
-                to = (item.get("to_string") or "").strip()
-                if fr and not to:
-                    if seen_assigned or first_assign_dt:  # only count if we know they were assigned at some point
-                        ah = adjusted_hours_between(created_dt, entry_dt)
-                        engineer_unassigned.append({
-                            "key": t["key"],
-                            "summary": t.get("summary", ""),
-                            "engineer": fr,
-                            "hours": round(ah, 1) if ah is not None else None,
-                        })
-                        break
-                if not fr and to:
-                    seen_assigned = True
-            else:
-                continue
-            break
-
         # Won't Do / Cannot Reproduce / Duplicate
         if (t.get("resolution") or "").lower().strip() in NEVER_DO_RESOLUTIONS:
             wont_do.append({
@@ -442,15 +315,6 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
     ever_closed_count = len(ever_closed_keys)
     in_window_count = len(in_window)
 
-    # Enrich each reassign_out item with the ticket's total Team-transition
-    # count so the report can flag "moved 1 time" vs "moved 4 times" inline
-    # without re-walking the changelog.
-    for rec in reassign_out:
-        rec["transitions_count"] = transitions_count_by_key.get(rec["key"], 1)
-    # Sort bouncing tickets by transitions desc so the noisiest land at the top.
-    bouncing.sort(key=lambda r: r["transitions_count"], reverse=True)
-    returned_to_focus.sort(key=lambda r: r["transitions_count"], reverse=True)
-
     return {
         "in_window_count": in_window_count,
         "closed_in_window_count": currently_closed_count,
@@ -477,21 +341,9 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
             "fast_bounce_24h_calendar_count": len(reassign_out_24h_calendar),
             "items": reassign_out,
         },
-        "engineer_unassigned": {
-            "count": len(engineer_unassigned),
-            "items": engineer_unassigned,
-        },
         "wont_do": {
             "count": len(wont_do),
             "items": wont_do,
-        },
-        "bouncing": {
-            "count": len(bouncing),
-            "items": bouncing,
-        },
-        "returned_to_focus": {
-            "count": len(returned_to_focus),
-            "items": returned_to_focus,
         },
     }
 
@@ -499,73 +351,6 @@ def compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team
 def _created_in_window(t, window_start_dt, window_end_dt):
     cdt = parse_dt(t.get("created"))
     return cdt is not None and window_start_dt <= cdt <= window_end_dt
-
-
-def compute_breakdowns(in_window, prior_window=None):
-    """Count tickets by priority/component/label/reporter/status. If
-    `prior_window` is provided, each row also carries `prior_count`,
-    `delta_pct`, and `is_new` so report.py can render a Δ-vs-prior column.
-
-    Delta semantics:
-      - prior_count > 0   → percentage delta vs prior, is_new=False
-      - prior_count == 0  → delta_pct=None, is_new=True (renders as 'new')
-      - prior_window None → fields omitted entirely (snapshot mode, v2 shape)
-    """
-    def counts(tickets, key_extractor):
-        c = Counter()
-        for t in tickets:
-            for k in key_extractor(t):
-                c[k] += 1
-        return c
-
-    def by_priority(t):
-        return [t.get("priority") or "None"]
-
-    def by_component(t):
-        comps = t.get("components") or []
-        return comps if comps else ["(no component)"]
-
-    def by_label(t):
-        lbls = t.get("labels") or []
-        return lbls if lbls else []
-
-    def by_reporter(t):
-        return [t.get("reporter") or "(unknown)"]
-
-    def by_status(t):
-        return [t.get("status") or "(unknown)"]
-
-    has_prior = prior_window is not None
-
-    def make_breakdown(extractor, top=10):
-        cur = counts(in_window, extractor)
-        prior = counts(prior_window, extractor) if has_prior else Counter()
-        rows = []
-        for name, count in cur.most_common(top):
-            row = {
-                "name": name,
-                "count": count,
-                "share_pct": round(100.0 * count / max(len(in_window), 1), 1),
-            }
-            if has_prior:
-                prior_count = prior.get(name, 0)
-                row["prior_count"] = prior_count
-                if prior_count > 0:
-                    row["delta_pct"] = round(100.0 * (count - prior_count) / prior_count, 1)
-                    row["is_new"] = False
-                else:
-                    row["delta_pct"] = None
-                    row["is_new"] = True
-            rows.append(row)
-        return rows
-
-    return {
-        "priority": make_breakdown(by_priority),
-        "component": make_breakdown(by_component),
-        "label": make_breakdown(by_label),
-        "reporter": make_breakdown(by_reporter),
-        "status_at_end": make_breakdown(by_status),
-    }
 
 
 def _safe_delta_pct(current, prior):
@@ -583,325 +368,6 @@ def _safe_delta_pct(current, prior):
     if prior == 0:
         return None
     return round(100.0 * (current - prior) / prior, 1)
-
-
-def _safe_pp_delta(current_rate, prior_rate):
-    """Percentage-point delta for a 0.0–1.0 rate. None-safe."""
-    if current_rate is None or prior_rate is None:
-        return None
-    return round(100.0 * (current_rate - prior_rate), 1)
-
-
-def compute_l1_deltas(current_l1, prior_l1):
-    """Compute structured deltas between two L2-signal dicts.
-
-    Returns None if `prior_l1` is None. Every cell is None-safe so report.py
-    can render '—' for unmeasurable values. Rate fields produce
-    percentage-point deltas (`pp_delta`); count and hour fields produce
-    absolute (`abs_delta`) and percentage (`pct_delta`) deltas.
-    """
-    if prior_l1 is None:
-        return None
-
-    cf = (current_l1 or {}).get("first_assignment") or {}
-    pf = (prior_l1 or {}).get("first_assignment") or {}
-
-    def hours_delta(cur_h, prior_h):
-        if cur_h is None or prior_h is None:
-            return {"current": cur_h, "prior": prior_h, "abs_delta": None, "pct_delta": None}
-        return {
-            "current": cur_h,
-            "prior": prior_h,
-            "abs_delta": round(cur_h - prior_h, 1),
-            "pct_delta": _safe_delta_pct(cur_h, prior_h),
-        }
-
-    def _walk(d, path):
-        cur = d
-        for k in path:
-            if not isinstance(cur, dict):
-                return None
-            cur = cur.get(k)
-        return cur
-
-    def count_delta(path):
-        # Distinguish "key absent on prior" (signal didn't exist yet — abs_delta
-        # is meaningless) from "measured zero" (signal existed and was 0 —
-        # abs_delta is the absolute count). The old code coerced both to 0,
-        # making a current=5 / missing-prior look like "+5" rather than
-        # "no comparable prior".
-        c_raw = _walk(current_l1, path)
-        p_raw = _walk(prior_l1, path)
-        c = c_raw or 0
-        p = p_raw or 0
-        return {
-            "current": c,
-            "prior": p,
-            "prior_present": p_raw is not None,
-            "abs_delta": (c - p) if p_raw is not None else None,
-            "pct_delta": _safe_delta_pct(c, p) if p_raw is not None else None,
-        }
-
-    def rate_delta(path):
-        c = _walk(current_l1, path)
-        p = _walk(prior_l1, path)
-        return {
-            "current": c,
-            "prior": p,
-            "pp_delta": _safe_pp_delta(c, p),
-        }
-
-    return {
-        "median_adjusted_hours": hours_delta(cf.get("median_adjusted_hours"), pf.get("median_adjusted_hours")),
-        "p90_adjusted_hours": hours_delta(cf.get("p90_adjusted_hours"), pf.get("p90_adjusted_hours")),
-        "never_assigned_count": count_delta(["first_assignment", "never_assigned_count"]),
-        "reopen_rate": rate_delta(["reopen", "rate"]),
-        "reopen_count": count_delta(["reopen", "count"]),
-        "quick_close_rate": rate_delta(["quick_close", "rate"]),
-        "quick_close_count": count_delta(["quick_close", "count"]),
-        "reassign_out_count": count_delta(["reassign_out", "count"]),
-        "reassign_out_24h_calendar_count": count_delta(["reassign_out", "fast_bounce_24h_calendar_count"]),
-        "engineer_unassigned_count": count_delta(["engineer_unassigned", "count"]),
-        "wont_do_count": count_delta(["wont_do", "count"]),
-    }
-
-
-def _canonical_team_name(name, focus_aliases, canonical):
-    """If `name` (case-insensitive) matches any focus alias, return the
-    canonical focus-team name; otherwise return `name` unchanged.
-
-    Used to merge renamed-team aliases (e.g. SECO + ACE → ACE) so historical
-    intake rows don't double-count the same logical team across windows.
-    """
-    if not name:
-        return name
-    if name.lower() in focus_aliases and canonical:
-        return canonical
-    return name
-
-
-def compute_intake_share(intake_records, focus_team_labels=None, focus_canonical=None, top=10):
-    """Aggregate the whole-support-project intake set by FIRST routed team.
-
-    Returns a list of rows sorted by count desc:
-      [{"team": "...", "count": N, "share_pct": ..., "is_focus": bool}]
-
-    `focus_team_labels` (set of strings) is matched case-insensitively to:
-      (a) merge any matching first-team values into `focus_canonical` so a
-          renamed/aliased team is counted as one row, and
-      (b) flag the resulting row as `is_focus` for table highlighting.
-    """
-    focus = {x.lower() for x in (focus_team_labels or set())}
-    counts = Counter()
-    for r in (intake_records or []):
-        team = (r.get("first_team") or "(unrouted)").strip() or "(unrouted)"
-        team = _canonical_team_name(team, focus, focus_canonical)
-        counts[team] += 1
-    total = sum(counts.values())
-    canonical_lower = (focus_canonical or "").lower()
-    rows = []
-    for name, count in counts.most_common(top):
-        rows.append({
-            "team": name,
-            "count": count,
-            "share_pct": round(100.0 * count / max(total, 1), 1),
-            "is_focus": name.lower() == canonical_lower or name.lower() in focus,
-        })
-    return rows, total
-
-
-def compute_routing_share_with_prior(current_intake, prior_intake, focus_team_labels=None, focus_canonical=None, top=10):
-    """Compute routing-share rows with prior_count + delta_pp + is_new.
-
-    Uses percentage-point delta on share (not absolute count) since denominators
-    differ across windows. A row is `is_new` when the team had 0 prior tickets.
-    """
-    cur_rows, cur_total = compute_intake_share(current_intake, focus_team_labels, focus_canonical, top=top)
-    if not prior_intake:
-        return {"rows": cur_rows, "current_total": cur_total, "prior_total": None}
-    prior_rows, prior_total = compute_intake_share(prior_intake, focus_team_labels, focus_canonical, top=999)  # all teams for lookup
-    prior_share_by_team = {r["team"]: r["share_pct"] for r in prior_rows}
-    prior_count_by_team = {r["team"]: r["count"] for r in prior_rows}
-    for row in cur_rows:
-        prior_share = prior_share_by_team.get(row["team"])
-        prior_count = prior_count_by_team.get(row["team"], 0)
-        row["prior_count"] = prior_count
-        row["prior_share_pct"] = prior_share
-        if prior_share is None:
-            row["pp_delta"] = None
-            row["is_new"] = True
-        else:
-            row["pp_delta"] = round(row["share_pct"] - prior_share, 1)
-            row["is_new"] = False
-    return {"rows": cur_rows, "current_total": cur_total, "prior_total": prior_total}
-
-
-def compute_routing_flow(in_team_tickets, focus_team_labels, focus_canonical=None):
-    """Compute from-team→to-team flows for tickets where the team field
-    transitioned, restricted to tickets that touched the focus team.
-
-    Returns:
-      {
-        "from_focus": {to_team: count, ...},  # focus → other (handed off)
-        "to_focus":   {from_team: count, ...} # other → focus (received)
-      }
-
-    `focus_team_labels` aliases (e.g. SECO + ACE for the same team) are
-    treated as the focus team — transitions BETWEEN aliases are skipped (they
-    represent renames, not real handoffs). Other-team values are also
-    canonicalised so a transition to `Seco` is reported as a transition to
-    `ACE` if those are aliases.
-    """
-    focus = {x.lower() for x in (focus_team_labels or set())}
-    from_focus = Counter()
-    to_focus = Counter()
-    for t in (in_team_tickets or []):
-        for entry in (t.get("changelog") or []):
-            for item in entry.get("items", []) or []:
-                if (item.get("field") or "").lower() != "team":
-                    continue
-                fr = (item.get("from_string") or "").strip() or "(none)"
-                to = (item.get("to_string") or "").strip() or "(none)"
-                fr_focus = fr.lower() in focus
-                to_focus_match = to.lower() in focus
-                if fr_focus and to_focus_match:
-                    # Alias-to-alias transition (e.g. SECO → ACE) — same team,
-                    # not a real handoff. Skip.
-                    continue
-                if fr_focus and not to_focus_match:
-                    from_focus[_canonical_team_name(to, focus, focus_canonical)] += 1
-                elif to_focus_match and not fr_focus:
-                    to_focus[_canonical_team_name(fr, focus, focus_canonical)] += 1
-    return {
-        "from_focus": dict(from_focus.most_common()),
-        "to_focus": dict(to_focus.most_common()),
-    }
-
-
-# Issuetypes that count as "engineering bug" outcomes vs "non-bug" outcomes
-# when a support ticket is converted to engineering work. Keep this grouping
-# coarse — leadership cares about bug-vs-not-bug, not Story-vs-Task minutiae.
-_BUG_ISSUETYPES = {"bug"}
-_NONBUG_ENG_ISSUETYPES = {"story", "task", "technical story", "spike", "documentation", "code", "sub-task"}
-
-
-def compute_bug_vs_other(in_window_tickets, linked_issue_types):
-    """For each in-window support ticket, classify the engineering-side
-    outcome by looking at issues linked from it.
-
-    Returns a per-ticket aggregate dict:
-      {
-        "ticket_count": N,                       # in-window support tickets
-        "tickets_with_links": N,                 # have ≥1 linked engineering issue
-        "tickets_without_links": N,
-        "by_classification": {
-          "bug_with_code": N,    # ≥1 Bug-typed link with code-change evidence
-          "bug_no_code": N,      # ≥1 Bug-typed link, none with code evidence
-          "non_bug": N,          # only non-bug eng links
-          "external_or_other": N,
-        },
-        "issuetype_counts": {issuetype: count, ...},  # raw distribution
-      }
-
-    Per-ticket classification rule:
-      - `bug_with_code` if any Bug-typed link has has_code_change=True
-      - `bug_no_code`   if a Bug-typed link exists but none have code-change evidence
-      - `non_bug`       otherwise, if any non-bug eng link exists
-      - `external_or_other` otherwise (linked support tickets, no eng link)
-    """
-    issuetype_counts = Counter()
-    classification_counts = Counter()
-    tickets_with_links = 0
-    for t in (in_window_tickets or []):
-        links = t.get("linked_issues") or []
-        if not links:
-            continue
-        eng_types_for_ticket = []
-        bug_link_has_code = []  # one bool per Bug-typed link
-        for ln in links:
-            type_info = linked_issue_types.get(ln["key"]) or {}
-            it = type_info.get("issuetype") or ln.get("type", "")
-            if not it:
-                continue
-            it_low = it.lower().strip()
-            issuetype_counts[it] += 1
-            eng_types_for_ticket.append(it_low)
-            if it_low in _BUG_ISSUETYPES:
-                # has_code_change may be None for old data shapes; treat as
-                # False (no evidence found) rather than crash.
-                bug_link_has_code.append(bool(type_info.get("has_code_change")))
-        if not eng_types_for_ticket:
-            continue
-        tickets_with_links += 1
-        if bug_link_has_code:
-            if any(bug_link_has_code):
-                classification_counts["bug_with_code"] += 1
-            else:
-                classification_counts["bug_no_code"] += 1
-        elif any(it in _NONBUG_ENG_ISSUETYPES for it in eng_types_for_ticket):
-            classification_counts["non_bug"] += 1
-        else:
-            classification_counts["external_or_other"] += 1
-    total = len(in_window_tickets or [])
-    return {
-        "ticket_count": total,
-        "tickets_with_links": tickets_with_links,
-        "tickets_without_links": total - tickets_with_links,
-        "by_classification": {
-            "bug_with_code": classification_counts.get("bug_with_code", 0),
-            "bug_no_code": classification_counts.get("bug_no_code", 0),
-            "non_bug": classification_counts.get("non_bug", 0),
-            "external_or_other": classification_counts.get("external_or_other", 0),
-        },
-        "issuetype_counts": dict(issuetype_counts.most_common()),
-    }
-
-
-def compute_bug_vs_other_with_prior(current_bvo, prior_bvo):
-    """Add prior + delta to the bug-vs-other dict. Δ is percentage-point on
-    bug-share-of-tickets-with-links (so windows of different size compare).
-
-    `bug_share_pp_delta` reports the cleaned signal: share of `bug_with_code`
-    only, NOT total Bug-typed links — the latter is sensitive to intake
-    labelling habits (config requests / feature gaps logged as Bug). The raw
-    "Bug ticket-type share" is still available via `current_bug_typed_share_pct`
-    for cross-checking.
-    """
-    if prior_bvo is None:
-        return {"current": current_bvo, "prior": None, "deltas": None}
-
-    def _share_of_with_links(b, key):
-        n = b.get("tickets_with_links", 0)
-        if not n:
-            return None
-        return 100.0 * b.get("by_classification", {}).get(key, 0) / n
-
-    def _bug_typed_share(b):
-        # Combined bug_with_code + bug_no_code — what the previous report
-        # showed. Kept for cross-reference only.
-        n = b.get("tickets_with_links", 0)
-        if not n:
-            return None
-        cls = b.get("by_classification") or {}
-        return 100.0 * (cls.get("bug_with_code", 0) + cls.get("bug_no_code", 0)) / n
-
-    cur_share = _share_of_with_links(current_bvo, "bug_with_code")
-    prior_share = _share_of_with_links(prior_bvo, "bug_with_code")
-    cur_typed = _bug_typed_share(current_bvo)
-    prior_typed = _bug_typed_share(prior_bvo)
-
-    deltas = {
-        "bug_count_abs_delta": current_bvo["by_classification"].get("bug_with_code", 0)
-                               - prior_bvo["by_classification"].get("bug_with_code", 0),
-        "bug_share_pp_delta": (round(cur_share - prior_share, 1)
-                               if (cur_share is not None and prior_share is not None) else None),
-        "current_bug_share_pct": round(cur_share, 1) if cur_share is not None else None,
-        "prior_bug_share_pct": round(prior_share, 1) if prior_share is not None else None,
-        # Cross-reference: the noisier "any Bug-typed link" share.
-        "current_bug_typed_share_pct": round(cur_typed, 1) if cur_typed is not None else None,
-        "prior_bug_typed_share_pct": round(prior_typed, 1) if prior_typed is not None else None,
-    }
-    return {"current": current_bvo, "prior": prior_bvo, "deltas": deltas}
 
 
 def compute_buckets_view(in_window_all, backlog_open_at_start, start_date, end_date, bucket):
@@ -1024,12 +490,9 @@ def compute_resolution_category_breakdown(tickets, window_start_dt, window_end_d
     }
 
 
-def analyze_window(data, bucket_choice, prior_in_window_tickets=None):
+def analyze_window(data, bucket_choice):
     """Analyze one window's `data.json`-shape dict. Returns the analysis dict:
-    window/totals/buckets/breakdowns/l1_signals/routing_flow/bug_vs_other.
-
-    `prior_in_window_tickets` (optional) is a list of normalized prior-window
-    in-window tickets; when supplied, breakdown rows carry prior_count + delta_pct."""
+    window/totals/buckets/l1_signals/resolution_categories."""
     fetch_args = data.get("args", {}) or {}
     try:
         start = datetime.strptime(fetch_args["start"], "%Y-%m-%d").date()
@@ -1052,22 +515,14 @@ def analyze_window(data, bucket_choice, prior_in_window_tickets=None):
     team_field_labels = set(team_field_list)
     # Canonical = first entry in the configured support_team_field list. By
     # convention the active team name comes first; any later entries are
-    # historical aliases (e.g. "ACE,SECO" — SECO is the prior name).
+    # historical aliases (e.g. "TeamA,TeamA-legacy" — the second is the prior name).
     team_field_canonical = team_field_list[0] if team_field_list else None
 
     in_window = [t for t in tickets if _created_in_window(t, window_start_dt, window_end_dt)]
 
     bucket_rows = compute_buckets_view(tickets, backlog_open_at_start, start, end, bucket)
-    breakdowns = compute_breakdowns(in_window, prior_window=prior_in_window_tickets)
-    l1 = compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team_field_labels, team_field_canonical=team_field_canonical)
+    l1 = compute_l1_signals(tickets, window_start_dt, window_end_dt, team_uuids, team_field_labels)
     resolution_categories = compute_resolution_category_breakdown(tickets, window_start_dt, window_end_dt)
-
-    # Routing-flow (per-ticket from→to / to→from for the focus team).
-    routing_flow = compute_routing_flow(tickets, team_field_labels, focus_canonical=team_field_canonical)
-
-    # Bug-vs-other classification of in-window support tickets via linked issuetypes.
-    linked_issue_types = data.get("linked_issue_types") or {}
-    bug_vs_other = compute_bug_vs_other(in_window, linked_issue_types)
 
     resolved_in_window = 0
     for t in tickets:
@@ -1090,15 +545,10 @@ def analyze_window(data, bucket_choice, prior_in_window_tickets=None):
             "backlog_at_end": bucket_rows[-1]["backlog_end"] if bucket_rows else backlog_open_at_start,
         },
         "buckets": bucket_rows,
-        "breakdowns": breakdowns,
         "l1_signals": l1,
-        "routing_flow": routing_flow,
-        "bug_vs_other": bug_vs_other,
         "resolution_categories": resolution_categories,
         "team_field_labels": sorted(team_field_labels),
         "team_field_canonical": team_field_canonical,
-        "_in_window_tickets": in_window,  # internal — used to wire prior into compute_breakdowns
-        "_intake_records": data.get("intake_all_teams") or [],  # internal — wired into routing-share at top level
     }
 
 
@@ -1164,7 +614,6 @@ def derive_findings(current, prior, deltas):
     findings = []
     cur_totals = current.get("totals") or {}
     cur_l1 = current.get("l1_signals") or {}
-    cur_breakdowns = current.get("breakdowns") or {}
     cur_cats = current.get("resolution_categories") or {}
     have_prior = prior is not None
     prior_totals = (prior or {}).get("totals") or {}
@@ -1177,6 +626,23 @@ def derive_findings(current, prior, deltas):
         prior_created = prior_totals.get("created_in_window") or 0
         delta_pct = (deltas or {}).get("totals", {}).get("created_pct")
         if delta_pct is not None and abs(delta_pct) >= cfg["pct"] and cur_created >= cfg["abs"]:
+            # When the current and prior windows have different day counts
+            # (typical: 30-day April vs 31-day March), the raw count Δ% silently
+            # double-counts the calendar gap. Compute a per-day-rate-adjusted
+            # Δ% as well so the synthesise agent can frame confidence and the
+            # renderer can show "+92% (raw) / +98% (per-day)" when meaningful.
+            cur_days = (current.get("window") or {}).get("days") or 0
+            prior_days = ((prior or {}).get("window") or {}).get("days") or 0
+            adjusted_pct = None
+            if cur_days and prior_days and cur_days != prior_days and prior_created > 0:
+                cur_rate = cur_created / cur_days
+                prior_rate = prior_created / prior_days
+                adjusted_pct = 100.0 * (cur_rate - prior_rate) / prior_rate
+            extras = {"delta_pct": delta_pct}
+            if adjusted_pct is not None:
+                extras["delta_pct_per_day"] = adjusted_pct
+                extras["cur_days"] = cur_days
+                extras["prior_days"] = prior_days
             findings.append(_finding(
                 kind="volume_change",
                 claim="In-team ticket volume %s %.0f%% vs prior window" % (
@@ -1185,87 +651,7 @@ def derive_findings(current, prior, deltas):
                 evidence_keys=[],  # whole-window claim — no per-ticket evidence
                 severity=_severity_from_pct(abs(delta_pct), cfg),
                 audience_hint="exec",
-                delta_pct=delta_pct,
-            ))
-
-    # --- volume_spike_by_component ---
-    if have_prior:
-        cfg = thresholds.COMPONENT_SPIKE
-        for row in (cur_breakdowns.get("components") or []):
-            cur_n = row.get("count") or 0
-            prior_n = row.get("prior_count")
-            delta_pct = row.get("delta_pct")
-            if (
-                cur_n >= cfg["abs"]
-                and (prior_n or 0) >= cfg["prior_floor"]
-                and delta_pct is not None
-                and abs(delta_pct) >= cfg["pct"]
-            ):
-                findings.append(_finding(
-                    kind="volume_spike_by_component",
-                    claim="Component '%s' volume %s %.0f%% vs prior" % (
-                        row.get("name", "(unknown)"),
-                        "up" if delta_pct >= 0 else "down",
-                        abs(delta_pct)),
-                    metric=_arrow(prior_n or 0, cur_n),
-                    evidence_keys=row.get("keys", [])[:20],
-                    severity="medium",
-                    audience_hint="exec",
-                    delta_pct=delta_pct,
-                ))
-
-    # --- defect_rate_change ---
-    if have_prior:
-        cfg = thresholds.DEFECT_RATE
-        bvo_combined = current.get("bug_vs_other_combined") or {}
-        bvo_deltas = bvo_combined.get("deltas") or {}
-        bug_pp = bvo_deltas.get("bug_share_pp")
-        bug_abs_delta = bvo_deltas.get("bug_count_abs_delta")
-        cur_bug = bvo_combined.get("current", {}).get("bug_count", 0)
-        prior_bug = bvo_combined.get("prior", {}).get("bug_count", 0)
-        triggers_pp = bug_pp is not None and abs(bug_pp) >= cfg["pp"]
-        triggers_abs = (bug_abs_delta is not None and abs(bug_abs_delta) >= cfg["abs_delta"]
-                        and cur_bug >= cfg["abs_floor"])
-        if triggers_pp or triggers_abs:
-            findings.append(_finding(
-                kind="defect_rate_change",
-                claim="Bug-share of in-window tickets %s vs prior" % (
-                    "up" if (bug_pp or 0) >= 0 else "down"),
-                metric=_arrow(prior_bug, cur_bug),
-                evidence_keys=(bvo_combined.get("current") or {}).get("bug_keys", [])[:20],
-                severity="medium",
-                audience_hint="exec",
-                bug_share_pp=bug_pp,
-            ))
-
-    # --- priority_mix_shift ---
-    if have_prior:
-        cfg = thresholds.PRIORITY_MIX
-        # Priority breakdowns expose per-row prior counts; sum highest+high
-        # share both windows and compare.
-        def _hi_share(rows):
-            total = sum((r.get("count") or 0) for r in rows)
-            hi = sum((r.get("count") or 0) for r in rows
-                     if r.get("name", "").lower() in ("highest", "high"))
-            return (hi, total, (100.0 * hi / total) if total else 0.0)
-        cur_pri = cur_breakdowns.get("priorities") or []
-        prior_pri = ((prior or {}).get("breakdowns") or {}).get("priorities") or []
-        cur_hi, cur_total, cur_share = _hi_share(cur_pri)
-        prior_hi, prior_total, prior_share = _hi_share(prior_pri)
-        pp_delta = cur_share - prior_share
-        if cur_hi >= cfg["abs_floor"] and abs(pp_delta) >= cfg["pp"]:
-            cur_keys = [k for r in cur_pri
-                        if r.get("name", "").lower() in ("highest", "high")
-                        for k in (r.get("keys") or [])][:20]
-            findings.append(_finding(
-                kind="priority_mix_shift",
-                claim="Highest+High priority share %s %.1fpp vs prior" % (
-                    "up" if pp_delta >= 0 else "down", abs(pp_delta)),
-                metric="%.0f%% → %.0f%%" % (prior_share, cur_share),
-                evidence_keys=cur_keys,
-                severity="medium",
-                audience_hint="exec",
-                pp_delta=pp_delta,
+                **extras,
             ))
 
     # --- time_to_engineer_regression ---
@@ -1398,50 +784,6 @@ def derive_findings(current, prior, deltas):
             audience_hint="support",
         ))
 
-    # --- Cross-finding merge: component spike subsumes team-level volume_change ---
-    # A team-level volume_change finding plus a parallel volume_spike_by_component
-    # finding for the same window are usually two angles on the same underlying
-    # signal — the synthesise agent is supposed to merge them, but agent
-    # judgement is inconsistent run-to-run. Do the merge in code: if any single
-    # component's absolute delta accounts for at least the threshold share of
-    # the team-level absolute delta, suppress volume_change and tag the
-    # component finding with `also_explains_team_volume: true`.
-    if have_prior:
-        share_cfg = thresholds.COMPONENT_EXPLAINS_TEAM_VOLUME
-        team_abs_delta = abs(
-            (cur_totals.get("created_in_window") or 0)
-            - (prior_totals.get("created_in_window") or 0)
-        )
-        if team_abs_delta > 0:
-            comp_findings = [f for f in findings if f["kind"] == "volume_spike_by_component"]
-            for cf in comp_findings:
-                # The component finding's metric is "{prior} → {current}" — derive
-                # absolute delta from the component breakdown rows we already
-                # walked, by re-matching the component name out of the claim.
-                # Cheap and avoids stashing extra state on the finding.
-                m = re.search(r"Component '([^']+)'", cf.get("claim", ""))
-                if not m:
-                    continue
-                name = m.group(1)
-                row = next((r for r in (cur_breakdowns.get("components") or [])
-                            if r.get("name") == name), None)
-                if row is None:
-                    continue
-                comp_abs_delta = abs(
-                    (row.get("count") or 0) - (row.get("prior_count") or 0))
-                if comp_abs_delta / team_abs_delta >= share_cfg["share"]:
-                    cf["also_explains_team_volume"] = True
-                    cf["explains_team_volume_share"] = round(
-                        comp_abs_delta / team_abs_delta, 2)
-                    # Drop the team-level volume_change finding — its story is
-                    # now told by the component spike, with provenance.
-                    findings = [f for f in findings if f["kind"] != "volume_change"]
-                    # Keep the loop running so multiple co-firing component
-                    # spikes get tagged, but only one removal of volume_change
-                    # is needed.
-            # If any tag fired, re-emit so subsequent additions to derive_findings
-            # don't accidentally re-add volume_change.
-
     return findings
 
 
@@ -1477,45 +819,8 @@ def main():
             print("WARNING: %s exists but could not be loaded (%s); proceeding without prior comparison." % (prior_path, e), file=sys.stderr)
             prior_data = None
 
-    # Compute prior first (if present) so we can pass its in-window ticket set
-    # into compute_breakdowns for the current window.
-    prior_analysis = None
-    prior_in_window = None
-    if prior_data is not None:
-        prior_analysis = analyze_window(prior_data, args.bucket)
-        prior_in_window = prior_analysis.pop("_in_window_tickets", None)
-
-    current_analysis = analyze_window(
-        data, args.bucket,
-        prior_in_window_tickets=prior_in_window,
-    )
-    current_analysis.pop("_in_window_tickets", None)
-
-    # Routing-share + bug-vs-other Δ are wired here at the top level so they
-    # can compare current vs prior intake/linked-issue datasets.
-    cur_intake = current_analysis.pop("_intake_records", [])
-    prior_intake = (prior_analysis or {}).pop("_intake_records", []) if prior_analysis else []
-    focus_labels = set(current_analysis.get("team_field_labels") or [])
-    focus_canonical = current_analysis.get("team_field_canonical")
-
-    routing_share = compute_routing_share_with_prior(
-        cur_intake, prior_intake if prior_analysis is not None else None,
-        focus_team_labels=focus_labels,
-        focus_canonical=focus_canonical)
-    current_analysis["routing_share"] = routing_share
-
-    if prior_analysis is not None:
-        # Stash the prior routing-flow + bug_vs_other so report.py can render Δ
-        # without re-running the analysis.
-        prior_routing_flow = prior_analysis.get("routing_flow")
-        prior_bug_vs_other = prior_analysis.get("bug_vs_other")
-    else:
-        prior_routing_flow = None
-        prior_bug_vs_other = None
-
-    bvo_combined = compute_bug_vs_other_with_prior(
-        current_analysis.get("bug_vs_other"), prior_bug_vs_other)
-    current_analysis["bug_vs_other_combined"] = bvo_combined
+    prior_analysis = analyze_window(prior_data, args.bucket) if prior_data is not None else None
+    current_analysis = analyze_window(data, args.bucket)
 
     deltas = None
     if prior_analysis is not None:
@@ -1529,11 +834,6 @@ def main():
                     prior_analysis["totals"]["resolved_in_window"]),
                 "net_abs": current_analysis["totals"]["net"] - prior_analysis["totals"]["net"],
             },
-            "l1_signals": compute_l1_deltas(
-                current_analysis.get("l1_signals"),
-                prior_analysis.get("l1_signals")),
-            "routing_flow_prior": prior_routing_flow,
-            "bug_vs_other": bvo_combined.get("deltas"),
         }
 
     findings = derive_findings(current_analysis, prior_analysis, deltas)

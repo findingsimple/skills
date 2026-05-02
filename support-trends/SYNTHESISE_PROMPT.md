@@ -39,7 +39,7 @@ the renderer will not actually use.
 
 `analysis.json` contains:
 - `current.totals`, `current.l1_signals`, `current.resolution_categories` — raw numbers
-- `findings` — pre-crystallised structured findings emitted by `analyze.derive_findings()`. Schema: `{kind, claim, metric, evidence_keys, severity, audience_hint, ...extras}`. **You are free to surface a finding from this list verbatim, drop it, or rephrase its `claim` for clarity — but its `metric` and `evidence_keys` are factual and must not be changed.**
+- `findings` — pre-crystallised structured findings emitted by `analyze.derive_findings()`. Schema: `{kind, claim, metric, evidence_keys, severity, audience_hint, ...extras}`. **You are free to surface a finding from this list verbatim, drop it, or rephrase its `claim` for clarity — but its `metric` and `evidence_keys` are factual and must not be changed.** Watch for `delta_pct_per_day` on a `volume_change` finding — it's a length-adjusted % that you should reference in `so_what` when it differs materially from `delta_pct` (current vs prior window have different day counts), so the reader doesn't read a 30-vs-31-day comparison as a real shift.
 - `themes` (when present) — vocabulary + per-ticket records. Use to spot themes that grew, shrank, or are new.
 - `support_feedback` (when present) — `{charter_drift: [...], l2_containment_signals: [...], categorisation_quality: [...]}`. Each entry has `ticket_keys` you can cite.
 - `narrative_notes` (when present) — short calendar / baseline context lines (e.g. "Window overlaps the late-December office-closure period"). These are NOT findings — they're framing the report renders separately. **You may reference them in a `so_what`** to qualify confidence ("…but prior baseline was depressed by holiday closures, so confirm in May") but **do not** restate them as findings — that would duplicate context the renderer is already showing.
@@ -52,19 +52,19 @@ Produce a single `findings` list. Aim for **6–12 findings total** for a monthl
 
 For each finding:
 
-- `claim` — declarative single sentence, ≤ 140 chars. Lead with the change, not the noun. Example: ✅ `"Bug-share of in-window tickets up 8pp vs March (28% → 36%)"` ❌ `"There has been an increase in bug-share..."`
+- `claim` — declarative single sentence, ≤ 140 chars. Lead with the change, not the noun. Example: ✅ `"Reopen rate up 8pp vs prior (4% → 12%)"` ❌ `"There has been an increase in the reopen rate..."`
 - `metric` — the actual number / arrow / count. Pull from the source finding's `metric` field; do not change it.
 - `evidence_keys` — list of Jira ticket keys (1+ required). Pull from the source finding's `evidence_keys`; for finding kinds with no per-ticket evidence (e.g. `volume_change`), pull representative keys from `themes.current_records` or `support_feedback.l2_containment_signals[*].ticket_keys` that illustrate the same trend.
 - `audience` — `["exec"]`, `["support"]`, or `["exec", "support"]`. Default to the source finding's `audience_hint` but **you may override** when a deterministic finding's hint is clearly wrong for this window's context (rare).
-- `so_what` — one sentence (≤ 200 chars), action-oriented if possible. Example: `"Worth a 1:1 with L2 lead before next month's intake — if Customer-advice tickets stay at this share, an L2 runbook for tenant-config questions could close the gap."`. If you genuinely can't produce a useful `so_what`, write `"Watch next month."` — better than empty filler.
+- `so_what` — one sentence (≤ 320 chars; the apply step trims at a word boundary if longer), action-oriented if possible. Example: `"Worth a 1:1 with L2 lead before next month's intake — if Customer-advice tickets stay at this share, an L2 runbook for tenant-config questions could close the gap."`. If you genuinely can't produce a useful `so_what`, write `"Watch next month."` — better than empty filler.
 - `confidence` — `"high"` (deterministic finding with strong evidence) | `"medium"` (sub-agent assessment / requires human read) | `"low"` (signal worth investigating but the finding could be wrong).
 
 ### Selection rules
 
-- **Don't restate every deterministic finding.** If two findings overlap (e.g. `volume_change` and `volume_spike_by_component`), prefer the more specific one or merge. Note: `analyze.derive_findings()` already does the obvious case for you — when a single component spike accounts for ≥60% of the team-level volume delta, `volume_change` is suppressed and the component finding carries `also_explains_team_volume: true` + `explains_team_volume_share`. When you see that tag, your `claim` should mention both angles ("PMS Sync component up 350% — drove 64% of the team-level volume jump") rather than pretending the team-level signal didn't fire.
+- **Don't restate every deterministic finding.** If two findings overlap, prefer the more specific one or merge into a single claim.
 - **Don't pad.** A short, sharp findings list beats a long, padded one. The reader is an engineering manager — they will spot filler immediately.
 - **Mix exec and support audience.** A typical monthly digest has 2–4 exec findings (volume / quality / themes) and 4–8 support findings (charter drift, containment, categorisation, L2 quality regressions).
-- **Cite themes by name.** "Recurring theme `pms-sync-yardi` jumped from 4 to 11 tickets" is better than "Some theme grew significantly".
+- **Cite themes by name.** "Recurring theme `integration-sync-vendor-x` jumped from 4 to 11 tickets" is better than "Some theme grew significantly".
 
 ### What NOT to include
 
@@ -85,19 +85,19 @@ The file must be valid JSON in this exact shape:
 {
   "findings": [
     {
-      "claim": "In-team ticket volume up 92% vs March (24 → 46)",
+      "claim": "In-team ticket volume up 92% vs prior month (24 → 46)",
       "metric": "24 → 46",
-      "evidence_keys": ["ECS-5478", "ECS-5491", "ECS-5512"],
+      "evidence_keys": ["PROJ-5478", "PROJ-5491", "PROJ-5512"],
       "audience": ["exec"],
-      "so_what": "Watch May to confirm whether this is a sustained shift or a one-month spike driven by a single customer onboarding.",
+      "so_what": "Watch next month to confirm whether this is a sustained shift or a one-month spike driven by a single customer onboarding.",
       "confidence": "high"
     },
     {
-      "claim": "Recurring theme 'pms-sync-yardi' jumped from 2 to 9 tickets",
+      "claim": "Recurring theme 'integration-sync-vendor-x' jumped from 2 to 9 tickets",
       "metric": "2 → 9",
-      "evidence_keys": ["ECS-5500", "ECS-5505", "ECS-5520"],
+      "evidence_keys": ["PROJ-5500", "PROJ-5505", "PROJ-5520"],
       "audience": ["exec", "support"],
-      "so_what": "If May confirms the trend, file an engineering investigation epic for Yardi sync — current bandwidth in ACE won't absorb this if it doubles again.",
+      "so_what": "If next month confirms the trend, file an engineering investigation epic for Vendor X sync — current team bandwidth won't absorb this if it doubles again.",
       "confidence": "medium"
     }
   ]

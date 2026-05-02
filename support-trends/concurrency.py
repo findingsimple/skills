@@ -244,17 +244,25 @@ _STALE_FILES_RELATIVE = (
     "data.json",
     "data_prior.json",
     "report.md",
+    # v1-era artefacts that occasionally linger in /tmp/ when a v1 cache predates
+    # a v2 install. Listed explicitly so a v2 run after a v1 run starts clean.
+    "triage.json",
 )
 _STALE_DIRS_RELATIVE = (
     "themes",
     "support_feedback",
     "synthesise",
+    # v1-era subdirs (charter agent, cluster fixture, old synthesis agent name,
+    # triage cross-ref). Removing keeps the cache clean across version jumps.
+    "charter",
+    "clusters",
+    "synthesis",
+    "triage_crossref",
 )
 # Files explicitly KEPT across runs. Listed here so a future maintainer
 # checking "where does the persistent vocabulary live?" can find it.
 _KEPT_PATTERNS = (
     ".run.lock",                     # the lock itself; only release() removes it
-    ".jql_changed_predicate",        # JQL probe cache; cheap to rebuild but no harm in keeping
     "themes_vocabulary",             # legacy + per-team vocab fallback (canonical lives in vault)
 )
 

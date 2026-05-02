@@ -92,6 +92,8 @@ python3 ~/.claude/skills/support-trends/fetch.py
 
 Reads `setup.json`, runs the three JQLs (created-in-window, resolved-in-window-but-created-earlier, open-backlog-at-window-start), per-ticket changelog enrichment, and writes the merged ticket bundle to `/tmp/support_trends/data.json`. Includes `resolution_category` (customfield_11695).
 
+Every JQL/window argument defaults from `setup.json`; pass `--team-vault-dir`, `--support-project-key`, `--support-label`, `--support-team-field`, `--start`, `--end`, `--prior-start`, `--prior-end`, or `--no-prior` only when overriding for an ad-hoc re-run.
+
 ### Step 3 — Analyze (deterministic findings)
 
 ```bash
@@ -102,11 +104,11 @@ Runs all deterministic checks and emits **crystallised findings**, not raw count
 
 ```json
 {
-  "kind": "volume_change|volume_spike_by_component|defect_rate_change|priority_mix_shift|time_to_engineer_regression|reopen_spike|quick_close_pattern|reassign_out_burst|never_do_rate|categorisation_blank|l3_bounced_back",
-  "claim": "Ingest defects up 38% MoM (16 → 22)",
+  "kind": "volume_change|time_to_engineer_regression|reopen_spike|quick_close_pattern|reassign_out_burst|never_do_rate|categorisation_blank|l3_bounced_back",
+  "claim": "In-team ticket volume up 38% vs prior window",
   "metric": "16 → 22",
   "delta_pct": 37.5,
-  "evidence_keys": ["ECS-123", ...],
+  "evidence_keys": ["PROJ-123", ...],
   "severity": "high|medium|low",
   "audience_hint": "exec|support"
 }
@@ -167,7 +169,7 @@ Strict schema (rejected by `apply_synthesise.py` if violated):
     {
       "claim": "...",
       "metric": "...",
-      "evidence_keys": ["ECS-123", ...],
+      "evidence_keys": ["PROJ-123", ...],
       "audience": ["exec"|"support"|"both"],
       "so_what": "...",
       "confidence": "high|medium|low"
@@ -209,30 +211,30 @@ tags: [support-trends]
 ## Context
 - _{narrative_note text — only present when narrative_notes fired (e.g. holiday window overlap)}_
 
-- **{claim}** (`{metric}`) _(confidence)_ — [[ECS-123]] [[ECS-234]] ...
+- **{claim}** (`{metric}`) _(confidence)_ — [[PROJ-123]] [[PROJ-234]] ...
   → {so_what}
 - ...
 
 ## To Support
-- **{claim — exec+support audience}** (`{metric}`) _(confidence)_ — [[ECS-...]] ...
+- **{claim — exec+support audience}** (`{metric}`) _(confidence)_ — [[PROJ-...]] ...
   → {so_what}
 
 ### Charter drift candidates
-- [[ECS-...]] — suggested: **{team}** _(confidence)_
+- [[PROJ-...]] — suggested: **{team}** _(confidence)_
   → {reason}
 
 ### L2 containment signals
-- **{pattern}** _(confidence)_ — [[ECS-...]]
+- **{pattern}** _(confidence)_ — [[PROJ-...]]
   → {gap}
 
 ### Categorisation quality
-- [[ECS-...]] _(confidence)_ — {issue}
+- [[PROJ-...]] _(confidence)_ — {issue}
   → suggested: `{category}`
 
 # Themes
 | Theme | Current | Prior | Δ | Tickets |
 |---|---:|---:|---:|---|
-| pms-sync-yardi | 12 | 6 | +6 | [[ECS-...]] ... |
+| integration-sync-vendor-x | 12 | 6 | +6 | [[PROJ-...]] ... |
 
 # Numbers
 
@@ -256,9 +258,6 @@ All deterministic findings emitted by `analyze.derive_findings()` read their tri
 | Finding kind | Threshold dict | What it tunes |
 |---|---|---|
 | `volume_change` | `thresholds.VOLUME_CHANGE` | `pct` (% MoM change), `abs` (current-window count floor), `severity_high` (high-severity break) |
-| `volume_spike_by_component` | `thresholds.COMPONENT_SPIKE` | `pct`, `abs`, `prior_floor` |
-| `defect_rate_change` | `thresholds.DEFECT_RATE` | `pp` (share-shift), `abs_delta`, `abs_floor` |
-| `priority_mix_shift` | `thresholds.PRIORITY_MIX` | `pp`, `abs_floor` |
 | `time_to_engineer_regression` | `thresholds.TIME_TO_ENGINEER` | `pct`, `abs_floor_hours` |
 | `reopen_spike` | `thresholds.REOPEN` | `pp`, `abs` |
 | `quick_close_pattern` | `thresholds.QUICK_CLOSE` | `pp`, `abs` |
@@ -266,9 +265,6 @@ All deterministic findings emitted by `analyze.derive_findings()` read their tri
 | `never_do_rate` | `thresholds.NEVER_DO` | `ratio` (multiple of prior count), `abs` |
 | `categorisation_blank` | `thresholds.CATEGORISATION_BLANK` | `pct` (share of resolved-in-window), `abs_resolved_floor`, `severity_high` |
 | `l3_bounced_back` | `thresholds.L3_BOUNCED` | `abs`, `severity_high` |
-| _(merge rule)_ component spike subsumes `volume_change` | `thresholds.COMPONENT_EXPLAINS_TEAM_VOLUME` | `share` — when any component spike's absolute delta accounts for ≥ this share of the team-level absolute delta, the team-level `volume_change` finding is suppressed and the component finding is tagged `also_explains_team_volume: true` |
-
-Display-only formatting cutoffs (small-base markers, concentration call-outs) live in `thresholds.DISPLAY` — these affect the renderer, not whether a finding fires.
 
 A finding kind with no prior-window data available (e.g. when `--no-prior` was passed) silently skips its check rather than firing on incomplete data.
 

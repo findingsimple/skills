@@ -35,7 +35,30 @@ _VALID_CONFIDENCE = {"high", "medium", "low"}
 _VALID_AUDIENCE = {"exec", "support"}
 _KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+-\d+\Z", re.ASCII)
 MAX_CLAIM_CHARS = 140
-MAX_SO_WHAT_CHARS = 200
+# Raised from 200 to 320: prior runs truncated `so_what` mid-word (e.g.
+# "...give L2 a CLI re-grant ru") because the agent prompt allows up to 200
+# chars of useful prose and the action clause often runs into a recommendation
+# tail. 320 covers the long tail without inviting paragraphs.
+MAX_SO_WHAT_CHARS = 320
+
+
+def _smart_truncate(text, limit):
+    """Truncate `text` to at most `limit` chars without splitting a word.
+
+    If the raw string is already within limit, return it unchanged. Otherwise
+    cut to the last whitespace before `limit - 1` and append `…`. Falls back to
+    a hard cut when the string has no whitespace before the limit (e.g. a giant
+    URL): one ugly truncation is still better than a chopped-mid-word claim.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    if len(s) <= limit:
+        return s
+    cut = s.rfind(" ", 0, limit - 1)
+    if cut <= 0:
+        return s[: limit - 1].rstrip() + "…"
+    return s[:cut].rstrip(" ,;:") + "…"
 
 
 def _load_json(path):
@@ -87,11 +110,11 @@ def _validate_finding(rec, valid_keys):
     if confidence not in _VALID_CONFIDENCE:
         confidence = "medium"
     return {
-        "claim": claim[:MAX_CLAIM_CHARS],
+        "claim": _smart_truncate(claim, MAX_CLAIM_CHARS),
         "metric": str(rec.get("metric") or "")[:80],
         "evidence_keys": keys[:20],
         "audience": audience,
-        "so_what": str(rec.get("so_what") or "")[:MAX_SO_WHAT_CHARS],
+        "so_what": _smart_truncate(rec.get("so_what") or "", MAX_SO_WHAT_CHARS),
         "confidence": confidence,
     }
 
