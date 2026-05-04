@@ -77,6 +77,10 @@ python3 ~/.claude/skills/incident-kb/fetch.py [--team TEAM] [--dry-run] [--force
 
 This crawls Confluence retro pages and Jira INC epics, cross-references them, and saves JSON to `/tmp/incident_kb/`.
 
+Cross-referencing is two-stage:
+1. **Strict match** — INC-NNN keys found in the retro page title, body, or labels are matched directly to the corresponding epic.
+2. **Inferred match (fallback)** — for retros with no INC reference at all, pair to a remaining orphan epic by date (±3 days) + title similarity. Surfaced separately as `inferred_matches` with a confidence score so callers can show that the source data was missing the link.
+
 If `--dry-run`, show the output (what would be fetched) and stop.
 
 ### Step 4 — Generate markdown
@@ -92,6 +96,7 @@ This reads the cached JSON and writes:
 - `_Index.md` — all incidents grouped by year with severity tags
 - `_Trend Report.md` — incident frequency, severity distribution, service heatmap
 - `_Recurrence Report.md` — recurring labels, keyword themes, missing retros
+- `_Missing INC References.md` — retros that were paired by the inferred-match fallback (i.e. no INC-NNN reference exists in the retro page); each entry shows the proposed INC key, retro link, and confidence so the team can backfill the reference
 
 ### Step 5 — Present results
 

@@ -172,7 +172,7 @@ Pulls the previous month's Bonusly recognition (given and received) for tracked 
 
 ### incident-kb
 
-Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources, writes date-sorted per-incident files (`YYYY-MM-DD — INC-KEY — Title.md`), routes test incidents to a `_test/` subdirectory, and generates trend/recurrence reports. Per-incident files include `tags: [incident, sev/{level}]` frontmatter for Obsidian graph clustering. Slack channel references in retro content are wrapped in backticks to prevent false tag parsing.
+Build a searchable incident knowledge base from Confluence retrospectives and Jira INC epics. Cross-references both sources, writes date-sorted per-incident files (`YYYY-MM-DD — INC-KEY — Title.md`), routes test incidents to a `_test/` subdirectory, and generates trend/recurrence reports. Per-incident files include `tags: [incident, sev/{level}]` frontmatter for Obsidian graph clustering. Slack channel references in retro content are wrapped in backticks to prevent false tag parsing. Cross-referencing runs a date+title fallback when a retro page contains no `INC-NNN` reference; inferred matches are surfaced in `_Missing INC References.md` so the team can backfill the canonical key.
 
 ```bash
 /incident-kb                          # full pipeline: fetch + generate

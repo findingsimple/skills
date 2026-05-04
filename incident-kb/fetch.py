@@ -8,6 +8,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _libpath  # noqa: F401
@@ -327,10 +328,127 @@ def fetch_inc_epics(base_url, auth, project_key, force, dry_run):
     return epics
 
 
+def _parse_date_from_string(s):
+    """Extract the first ISO-style or 'DD Mon YYYY' date. Returns date or None."""
+    if not s:
+        return None
+    m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+        except ValueError:
+            pass
+    m = re.search(
+        r"(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        try:
+            return datetime.strptime(
+                "%s %s %s" % (m.group(1), m.group(2)[:3].title(), m.group(3)),
+                "%d %b %Y",
+            ).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _normalize_for_compare(s):
+    """Lowercase, strip dates, drop non-alphanumerics — for fuzzy title comparison."""
+    if not s:
+        return ""
+    s = s.lower()
+    s = re.sub(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", "", s)
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
+    return " ".join(s.split())
+
+
+def _infer_matches(orphan_retros, orphan_epics, retro_pages_by_id, epic_by_key):
+    """Pair orphan retros to orphan epics by date+title similarity (fallback when
+    the retro page has no INC-NNN reference at all in title or body).
+
+    A pair is accepted when both items have a parseable date within ±3 days AND
+    the date-stripped, normalised titles have similarity ≥ 0.45 (tightened to
+    0.60 when the gap is 2-3 days). Pairs are surfaced as `inferred_matches`
+    rather than merged into `matched` so consumers can show the lower confidence
+    and the team knows to backfill the missing INC reference into the retro.
+    """
+    retro_features = []
+    for r in orphan_retros:
+        page = retro_pages_by_id.get(r.get("retro_page_id", ""), {})
+        title = r.get("retro_title") or page.get("title", "")
+        date = _parse_date_from_string(title) or _parse_date_from_string(page.get("created_at", ""))
+        retro_features.append({
+            "retro": r,
+            "title": title,
+            "date": date,
+            "norm": _normalize_for_compare(title),
+        })
+
+    epic_features = []
+    for e in orphan_epics:
+        epic = epic_by_key.get(e.get("epic_key", ""), {})
+        summary = e.get("epic_summary") or epic.get("summary", "")
+        date = _parse_date_from_string(summary) or _parse_date_from_string(epic.get("created", ""))
+        epic_features.append({
+            "epic": e,
+            "summary": summary,
+            "date": date,
+            "norm": _normalize_for_compare(summary),
+        })
+
+    candidates = []
+    for ef in epic_features:
+        if not ef["date"]:
+            continue
+        for rf in retro_features:
+            if not rf["date"]:
+                continue
+            day_gap = abs((ef["date"] - rf["date"]).days)
+            if day_gap > 3:
+                continue
+            sim = SequenceMatcher(None, ef["norm"], rf["norm"]).ratio()
+            threshold = 0.45 if day_gap <= 1 else 0.60
+            if sim < threshold:
+                continue
+            confidence = round(sim * (1.0 - day_gap * 0.1), 2)
+            candidates.append((confidence, ef, rf, day_gap, sim))
+
+    # Greedy: highest confidence first, each retro/epic claimed at most once
+    candidates.sort(key=lambda x: -x[0])
+    used_retros = set()
+    used_epics = set()
+    inferred = []
+    for confidence, ef, rf, day_gap, sim in candidates:
+        ek = ef["epic"].get("epic_key", "")
+        rid = rf["retro"].get("retro_page_id", "")
+        if ek in used_epics or rid in used_retros:
+            continue
+        used_epics.add(ek)
+        used_retros.add(rid)
+        inferred.append({
+            "inc_key": ek,
+            "epic_key": ek,
+            "epic_summary": ef["summary"],
+            "retro_page_id": rid,
+            "retro_title": rf["title"],
+            "has_retro": True,
+            "has_epic": True,
+            "match_source": "inferred",
+            "confidence": confidence,
+            "match_reason": "date_gap=%dd, title_similarity=%.2f" % (day_gap, sim),
+        })
+
+    remaining_retros = [r for r in orphan_retros if r.get("retro_page_id", "") not in used_retros]
+    remaining_epics = [e for e in orphan_epics if e.get("epic_key", "") not in used_epics]
+    return inferred, remaining_retros, remaining_epics
+
+
 def cross_reference(retro_pages, inc_epics):
     """Match Confluence retro pages to Jira INC epics.
 
-    Returns dict with matched pairs, orphan retros, and orphan epics.
+    Returns dict with matched pairs, inferred matches, orphan retros, and orphan epics.
     """
     print("\n--- Cross-referencing ---")
 
@@ -390,15 +508,34 @@ def cross_reference(retro_pages, inc_epics):
                 "epic_summary": epic.get("summary", ""),
             })
 
+    # Fallback: pair remaining orphans by date+title similarity (catches retros
+    # that lack any INC-NNN reference). Surfaced separately so callers can show
+    # confidence and prompt the team to backfill the missing INC reference.
+    retro_pages_by_id = {p.get("page_id", ""): p for p in retro_pages}
+    inferred_matches, orphan_retros, orphan_epics = _infer_matches(
+        orphan_retros, orphan_epics, retro_pages_by_id, epic_by_key
+    )
+
     result = {
         "matched": matched,
+        "inferred_matches": inferred_matches,
         "orphan_retros": orphan_retros,
         "orphan_epics": orphan_epics,
     }
 
     print("Matched: %d" % len(matched))
-    print("Orphan retros (no INC key found): %d" % len(orphan_retros))
+    print("Inferred matches (date+title fallback): %d" % len(inferred_matches))
+    print("Orphan retros (no INC key, no inferred pair): %d" % len(orphan_retros))
     print("Orphan epics (no retro page): %d" % len(orphan_epics))
+
+    if inferred_matches:
+        print("\n  Inferred matches (retro missing INC key — backfill needed):")
+        for m in inferred_matches[:10]:
+            print("    - %s ↔ %s (conf %.2f, %s)" % (
+                m["epic_key"], m["retro_title"], m["confidence"], m["match_reason"],
+            ))
+        if len(inferred_matches) > 10:
+            print("    ... and %d more" % (len(inferred_matches) - 10))
 
     if orphan_retros:
         print("\n  Orphan retros:")
@@ -469,6 +606,7 @@ def main():
         "retro_count": len(retro_pages),
         "epic_count": len(inc_epics),
         "matched_count": len(cross_ref["matched"]),
+        "inferred_match_count": len(cross_ref.get("inferred_matches", [])),
         "orphan_retro_count": len(cross_ref["orphan_retros"]),
         "orphan_epic_count": len(cross_ref["orphan_epics"]),
     }
@@ -476,8 +614,9 @@ def main():
 
     print("\n--- Fetch complete ---")
     print("Cache: %s" % CACHE_DIR)
-    print("Retros: %d | Epics: %d | Matched: %d" % (
-        len(retro_pages), len(inc_epics), len(cross_ref["matched"]),
+    print("Retros: %d | Epics: %d | Matched: %d | Inferred: %d" % (
+        len(retro_pages), len(inc_epics),
+        len(cross_ref["matched"]), len(cross_ref.get("inferred_matches", [])),
     ))
 
 

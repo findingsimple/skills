@@ -213,6 +213,9 @@ def build_incident(match, confluence_pages, jira_epics, base_url):
         "fix_versions": epic.get("fix_versions", []),
         "sections": sections,
         "body_text": retro.get("body_text", ""),
+        "match_source": match.get("match_source", "key"),
+        "match_confidence": match.get("confidence"),
+        "match_reason": match.get("match_reason", ""),
     }
 
 
@@ -890,6 +893,51 @@ def generate_incident_index(incidents, output_path, dry_run):
     print("Index: %d incidents across %d years" % (len(incidents), len(by_year)))
 
 
+def generate_missing_inc_references_report(cross_ref, base_url, output_path, dry_run):
+    """List retros that are linked to an INC epic only by inferred (date+title)
+    matching — i.e. the retro page itself contains no INC-NNN reference. The
+    team should backfill the canonical key into the retro body so future runs
+    use the high-confidence match path instead of the fuzzy fallback.
+    """
+    print("\n--- Generating missing INC references report ---")
+    inferred = cross_ref.get("inferred_matches", []) or []
+
+    lines = [
+        "---",
+        "title: Retros Missing INC References",
+        "tags: [log]",
+        "---",
+        "",
+        "# Retros Missing INC References",
+        "",
+        "These retro pages were paired to an INC epic by date + title similarity ",
+        "because no `INC-NNN` reference was found in the retro title or body. ",
+        "The pairing is a best guess — please open each retro and add the canonical ",
+        "INC key (e.g. as a link to the Jira epic) so future syncs match it strictly.",
+        "",
+    ]
+
+    if not inferred:
+        lines.append("_No retros currently need backfilling — every matched retro references its INC key._")
+    else:
+        lines.append("| Confidence | Inferred INC | Retro | Reason |")
+        lines.append("|---|---|---|---|")
+        for m in sorted(inferred, key=lambda x: -float(x.get("confidence") or 0)):
+            conf = m.get("confidence")
+            conf_str = ("%.2f" % conf) if isinstance(conf, (int, float)) else "—"
+            ek = m.get("epic_key", "")
+            epic_link = "[%s](%s/browse/%s)" % (ek, base_url, ek) if base_url and ek else ek
+            rid = m.get("retro_page_id", "")
+            rt = (m.get("retro_title") or "").replace("|", "\\|")
+            retro_link = "[%s](%s/wiki/pages/%s)" % (rt, base_url, rid) if base_url and rid else rt
+            reason = (m.get("match_reason") or "").replace("|", "\\|")
+            lines.append("| %s | %s | %s | %s |" % (conf_str, epic_link, retro_link, reason))
+
+    filepath = os.path.join(output_path, "_Missing INC References.md")
+    write_file(filepath, "\n".join(lines), dry_run)
+    print("Missing INC refs: %d retros need backfill" % len(inferred))
+
+
 def main():
     args = parse_args()
 
@@ -907,8 +955,12 @@ def main():
     # Build unified incident list
     incidents = []
 
-    # Matched incidents
+    # Matched incidents (strict INC-key match in retro title or body)
     for match in cross_ref.get("matched", []):
+        incidents.append(build_incident(match, confluence_pages, jira_epics, base_url))
+
+    # Inferred matches (date+title fallback when retro lacks any INC key)
+    for match in cross_ref.get("inferred_matches", []):
         incidents.append(build_incident(match, confluence_pages, jira_epics, base_url))
 
     # Orphan retros
@@ -919,9 +971,10 @@ def main():
     for orphan in cross_ref.get("orphan_epics", []):
         incidents.append(build_orphan_epic_incident(orphan, jira_epics, base_url))
 
-    print("Total incidents: %d (matched: %d, orphan retros: %d, orphan epics: %d)" % (
+    print("Total incidents: %d (matched: %d, inferred: %d, orphan retros: %d, orphan epics: %d)" % (
         len(incidents),
         len(cross_ref.get("matched", [])),
+        len(cross_ref.get("inferred_matches", [])),
         len(cross_ref.get("orphan_retros", [])),
         len(cross_ref.get("orphan_epics", [])),
     ))
@@ -940,6 +993,7 @@ def main():
     generate_trend_report(incidents, output_path, args.dry_run)
     generate_recurrence_report(incidents, output_path, args.dry_run, vault_links)
     generate_incident_index(incidents, output_path, args.dry_run)
+    generate_missing_inc_references_report(cross_ref, base_url, output_path, args.dry_run)
 
     print("\n--- Generation complete ---")
     print("Output: %s" % output_path)
