@@ -130,13 +130,14 @@ def get_mr_notes(gitlab_url, token, project_id, mr_iid):
         print("  Warning: Could not fetch notes for MR !%s: %s" % (mr_iid, e), file=sys.stderr)
         return []
 
-    return [
-        {
-            "author": n.get("author", {}).get("username", ""),
-            "author_name": n.get("author", {}).get("name", ""),
+    out = []
+    for n in notes:
+        author = n.get("author") or {}
+        out.append({
+            "author": author.get("username", ""),
+            "author_name": author.get("name", ""),
             "created_at": n.get("created_at", ""),
             "body": n.get("body", ""),
             "system": n.get("system", False),
-        }
-        for n in notes
-    ]
+        })
+    return out

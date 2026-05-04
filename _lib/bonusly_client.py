@@ -48,7 +48,7 @@ def bonusly_get_all(token, path, params):
     all_results = []
     while True:
         data = bonusly_get(token, path, params)
-        results = data.get("result", [])
+        results = data.get("result") or []
         all_results.extend(results)
         if len(results) < 100:
             break
