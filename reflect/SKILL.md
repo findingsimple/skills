@@ -198,13 +198,33 @@ Wait for explicit confirmation. Per-item approval is required for global CLAUDE.
 
 For each approved item:
 
-1. Edit the target file (project CLAUDE.md, global CLAUDE.md, or write a memory file + update MEMORY.md index).
+1. Edit the target file (project CLAUDE.md, global CLAUDE.md, or write a memory file + update MEMORY.md index). Project CLAUDE.md and memory files live inside cwd-adjacent paths and are safe to use Edit on. Global `~/.claude/CLAUDE.md` is also safe to Edit (read it first).
 2. If the target is in a git repo and the user wants a commit, draft and commit (no `Co-Authored-By` per the user's global rule).
-3. Append a line to the reflection file's "Promoted to" footer:
+3. Replace the reflection file's "Promoted to" placeholder using a Python heredoc (NOT the Edit tool — Edit requires a prior Read, and Read on iCloud-synced vault paths can trigger TCC prompts and may be blocked by the sandbox). Pattern:
+
+   ```bash
+   python3 << 'PYEOF'
+   import os
+   path = os.path.expandvars("$OBSIDIAN_VAULT_PATH/Reflections/<DATE>-<SLUG>.md")
+   with open(path) as f:
+       text = f.read()
+   old = "## Promoted to\n\n_(populated after Step 5 user approval — see proposals below)_"
+   new = """## Promoted to
+
+   - "<insight 1>" → <target path> (commit <sha if applicable>)
+   - "<insight 2>" → <target path>
+   - "<insight 3>" → no promotion; already covered by <reference>"""
+   assert old in text, "placeholder not found"
+   text = text.replace(old, new)
+   tmp = path + ".tmp"
+   with open(tmp, "w") as f:
+       f.write(text)
+   os.replace(tmp, path)
+   print("footer updated")
+   PYEOF
    ```
-   - "<insight>" → <target file path> (commit <sha if applicable>)
-   ```
-   Use Edit to replace the placeholder section.
+
+   The `assert old in text` line catches the case where someone has already edited the file or the placeholder text drifted. The atomic `tmp + os.replace` keeps the file uncorrupted if the write is interrupted.
 
 ### Step 7 — Final output
 
