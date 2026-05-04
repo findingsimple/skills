@@ -127,6 +127,8 @@ Each skill lives in its own directory with a `SKILL.md` file:
   schedules/
     install.sh                              # Install/unload macOS LaunchAgents from templates
     com.claude.sprint-pulse.plist.template  # Runs /sprint-pulse weekdays at 08:30
+    com.claude.incident-kb.plist.template   # Runs /incident-kb on the 1st of each month at 09:00
+    com.claude.bonusly-sync.plist.template  # Runs /bonusly-sync on the 4th of each month at 09:00
 ```
 
 ## Shared library (`_lib/`)

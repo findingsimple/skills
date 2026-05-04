@@ -52,6 +52,8 @@ The `schedules/` directory contains macOS LaunchAgent templates for running skil
 | Template | Schedule | Skill |
 |----------|----------|-------|
 | `com.claude.sprint-pulse.plist.template` | Weekdays at 08:30 | `/sprint-pulse --team TeamA` |
+| `com.claude.incident-kb.plist.template` | 1st of each month at 09:00 | `/incident-kb` |
+| `com.claude.bonusly-sync.plist.template` | 4th of each month at 09:00 | `/bonusly-sync` |
 
 To add a new schedule, create a `.plist.template` in `schedules/` following the existing template pattern, then re-run `install.sh`.
 
