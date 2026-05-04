@@ -120,7 +120,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
     SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
     link.py             # Scans vault for entities, adds [[wiki links]] to existing files, generates index pages
   review-memory/
-    SKILL.md            # Slash orchestration: discover → classify (model judgment) → per-item approval → execute
+    SKILL.md            # Slash orchestration: discover → classify (model judgment) → triage into Phase A (obvious-keep / obvious-delete-duplicate, batch-confirm) + Phase B (needs-judgment, per-item approval) → execute with `git -C "$DECODED_PATH"`
     discover.py         # Scans ~/.claude/projects/*/memory/, captures frontmatter + body + mtime, flags possible duplicates → /tmp/review_memory/inventory.json
   reflect/
     SKILL.md            # Slash retro: pre-check → 7-section reflection → archive to vault → propose promotions → per-item approval → flow lessons into CLAUDE.md/memory

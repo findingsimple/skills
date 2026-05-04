@@ -377,7 +377,7 @@ Scan existing Obsidian vault files and add `[[wiki links]]` to known entities. L
 
 ### review-memory
 
-Sweep `~/.claude/projects/*/memory/` across every project on this machine. For each accumulated memory entry, propose ONE action — keep, move to repo `CLAUDE.md`, move to global `~/.claude/CLAUDE.md`, or delete — with a one-sentence reason. Per-item user approval gates every side effect; no auto mode.
+Sweep `~/.claude/projects/*/memory/` across every project on this machine. For each accumulated memory entry, propose ONE action — keep, move to repo `CLAUDE.md`, move to global `~/.claude/CLAUDE.md`, or delete — with a one-sentence reason. Two-phase confirmation: Phase A batch-confirms obvious-keep + obvious-delete-duplicate entries (no per-item gate); Phase B walks per-item through anything needing judgment, including every move-to-repo / move-to-global proposal. No auto mode for moves.
 
 ```bash
 /review-memory                                              # all projects

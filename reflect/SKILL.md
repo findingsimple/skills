@@ -50,14 +50,26 @@ No other arguments.
 
 Follow these steps exactly.
 
+### Step 0 — Parse arguments
+
+Read `$ARGUMENTS`. The only recognised flag is `--skip-archive`. Any other token is unknown — surface it to the user and stop.
+
+```bash
+SKIP_ARCHIVE=0
+case "$ARGUMENTS" in
+  ""|"--skip-archive") [ "$ARGUMENTS" = "--skip-archive" ] && SKIP_ARCHIVE=1 ;;
+  *) echo "Unknown argument: $ARGUMENTS. Allowed: (none) | --skip-archive" >&2; exit 1 ;;
+esac
+```
+
+If `SKIP_ARCHIVE=1`, skip Step 4 (archive write) but still walk every other step including the per-item promotion approval — the user wants the analysis without the file artifact.
+
 ### Step 1 — Pre-check
 
-If the conversation has fewer than ~10 substantive turns (excluding pure tool-call exchanges), ask the user:
+If the conversation has fewer than ~10 substantive turns (count user messages with more than one sentence; ignore pure tool-result exchanges), ask the user:
 > "This session is short — proceed with full reflection, or skip?"
 
 Default to skip if the user doesn't reply with a clear yes.
-
-If `--skip-archive` is passed, skip the archive write but still walk the framework and propose promotions.
 
 ### Step 2 — Resolve archive path
 
@@ -70,9 +82,10 @@ echo "$OBSIDIAN_VAULT_PATH"
 
 ```bash
 mkdir -p "$ARCHIVE_DIR"
+DATE=$(date +%F)   # YYYY-MM-DD, sandbox-safe
 ```
 
-Compute `<YYYY-MM-DD>` from today's date and `<slug>` from the **gist** of the conversation (kebab-case, ≤6 words, no version numbers, no dates). Examples:
+Derive `<slug>` from the **gist** of the conversation (kebab-case, ≤6 words, no version numbers, no dates). If you can't pick a clear gist, fall back to the first 4 words of the user's most recent substantive request, kebab-cased. Examples:
 - "Added unit tests for `_lib/`" → `lib-unit-tests`
 - "Fixed broken wiki-links in support-trends report" → `support-trends-wiki-link-fix`
 - "Designed reflect and review-memory skills" → `meta-skills-design`
@@ -130,7 +143,11 @@ Specific, not speculative. "Maybe we should consider..." doesn't qualify; "Add `
 
 #### Section 7 — Promoted to (footer placeholder)
 
-Leave as `_(populated by Step 5 after user approves promotions)_` for now.
+Leave the section body as exactly this string (Step 6 will assert on it):
+
+```
+_(populated after Step 5 user approval)_
+```
 
 ### Step 4 — Write the archive (unless `--skip-archive`)
 
@@ -208,7 +225,7 @@ For each approved item:
    path = os.path.expandvars("$OBSIDIAN_VAULT_PATH/Reflections/<DATE>-<SLUG>.md")
    with open(path) as f:
        text = f.read()
-   old = "## Promoted to\n\n_(populated after Step 5 user approval — see proposals below)_"
+   old = "## Promoted to\n\n_(populated after Step 5 user approval)_"
    new = """## Promoted to
 
    - "<insight 1>" → <target path> (commit <sha if applicable>)

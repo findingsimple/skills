@@ -84,67 +84,105 @@ For each project record:
    - **move-to-global** — preference that applies across every project on this machine. *"User's author name is 'findingsimple'." "Atlassian cloudId convention."*
    - **delete** — duplicate of an existing CLAUDE.md rule (check `dedup_signal`), stale fact contradicted by current code, or one-shot context that's no longer relevant.
 
+3. For each entry, also assign a **triage bucket** (this is the per-item approval pacing, separate from the action choice):
+
+   - **obvious-keep** — true personal preference with no plausible alternate classification. The bullet is a behaviour-shaping rule about how the user wants Claude to interact, not about code. *"Always ask before running destructive git commands."*
+   - **obvious-delete-duplicate** — `dedup_signal` is non-empty AND the memory's name or first sentence appears verbatim (or near-verbatim) in the project's existing CLAUDE.md. Low judgment, high confidence.
+   - **needs-judgment** — anything else. Includes every move-to-repo and move-to-global proposal (because the wording matters), every entry where the dedup heuristic is ambiguous, every orphaned-project entry, and every malformed-frontmatter entry.
+
+   Default bias: when in doubt, push to `needs-judgment`. The user prefers extra approval prompts over silent migrations.
+
    For each entry, prepare:
-   - The chosen action
+   - The chosen action + triage bucket
    - One-sentence reason
-   - If moving to a CLAUDE.md: the proposed bullet text in the existing file's voice (lead with **bold rule**, then explanation, reference if applicable)
-   - If keeping: no further action
+   - If moving to a CLAUDE.md: the proposed bullet text in the existing file's voice (lead with **bold rule**, then explanation, reference if applicable). State which **target section** you'd insert under (or `unknown — ask user`).
+   - If keeping or duplicate-deleting: no further preparation
 
-### Step 4 — Present batch and confirm
+### Step 4 — Present in two phases
 
-Render the proposals as a single review block per project:
+Render proposals per project in this order:
+
+**Phase A — batch confirm (obvious-keep + obvious-delete-duplicate):**
 
 ```
-## Project: /Users/jasonconroy/.claude/skills
+## Project: /Users/<you>/path/to/repo
 
-  1. feedback_pulse_terse_output.md
-     Action: KEEP
-     Reason: Personal preference about output verbosity in pulse runs — not a code rule.
-
-  2. feedback_some_old_rule.md
-     Action: DELETE
-     Reason: Duplicate of CLAUDE.md "Atomic JSON writes" convention (line 185).
-
-  3. project_some_design_note.md
-     Action: MOVE-TO-REPO
-     Reason: Code rule about pipeline orchestration — belongs in CLAUDE.md Conventions.
-     Proposed CLAUDE.md bullet:
-       - **Pipeline cache lifetime** — orchestrated pipelines must call `clear_stale_state()` ...
+  Phase A — batch (will execute on a single approval):
+    KEEP:                feedback_pulse_terse_output.md
+    KEEP:                feedback_no_background_tasks.md
+    DELETE (duplicate):  feedback_some_old_rule.md  → CLAUDE.md "Atomic JSON writes" convention
+    DELETE (duplicate):  feedback_other_dup.md      → CLAUDE.md "Validate env vars" convention
 ```
 
-Then ask the user:
-- "Approve all? Skip specific items? Edit any proposed text?"
+Ask: "Approve Phase A batch as a single action?"
 
-Wait for explicit user confirmation before proceeding. Do NOT execute on assumed approval.
+If approved: execute Phase A immediately (delete-duplicates remove files + index lines; keeps are no-op). Print one line per executed action.
+
+If skipped or edited: drop into per-item flow for Phase A entries before moving to Phase B.
+
+**Phase B — per-item walk (needs-judgment):**
+
+```
+  Phase B — per-item review (each requires its own approval):
+
+    1. project_some_design_note.md
+       Action: MOVE-TO-REPO
+       Target section: Conventions  (or: "unknown — please tell me which section")
+       Reason: Code rule about pipeline orchestration; references a specific file pattern.
+       Proposed CLAUDE.md bullet:
+         - **Pipeline cache lifetime** — orchestrated pipelines must call `clear_stale_state()` ...
+
+    2. project_team_naming_thing.md
+       Action: MOVE-TO-GLOBAL  ⚠️ would apply to EVERY project on this machine
+       Reason: Preference about how Claude refers to team names — not project-specific.
+       Currently-affected project list: skills, hppy/connect (any other repo touching teams will be affected after promotion)
+       Proposed ~/.claude/CLAUDE.md bullet: ...
+```
+
+For each Phase B item, ask explicitly: "Approve, skip, or edit?" — do NOT batch-confirm. Per-item is the point.
+
+For any **MOVE-TO-GLOBAL** proposal, the approval block must enumerate which projects will be newly affected by the global rule (use the inventory's `projects[]` list to name them). The user must be able to see what they're committing every other repo to before approving.
 
 ### Step 5 — Execute approved actions
 
 For each approved item, in this order:
 
-1. **Move-to-repo:** Read `<decoded_path>/CLAUDE.md`, find the relevant section (Conventions, Security Notes, Skill Authoring Checklist — match by topic), use Edit to insert the new bullet. Keep within existing list ordering and voice. Then delete the memory file and update the project's `MEMORY.md` index (remove the line; preserve the rest of the index).
-2. **Move-to-global:** Same flow but target `~/.claude/CLAUDE.md`. **Confirm again per item** before editing — global config is high-blast-radius and a single approve-all should not greenlight global edits.
-3. **Delete:** Remove the memory file and the corresponding line from the project's `MEMORY.md` index.
+1. **Move-to-repo:** Read `<decoded_path>/CLAUDE.md`. **Section selection rule:** if the proposal in Phase B named a target section AND that section exists in the file, insert the new bullet there in the existing list ordering and voice. Otherwise, ASK THE USER which section to insert under — never invent a new top-level section without explicit approval, and never silently fall back to "the closest-named section". Then delete the memory file and update the project's `MEMORY.md` index (read the index first to confirm the line shape, typically `- [filename](filename) — short blurb`; remove only that line, preserve the rest).
+2. **Move-to-global:** Same flow but target `~/.claude/CLAUDE.md`. The Phase B per-item approval already gated this; no second confirmation here.
+3. **Delete:** Remove the memory file and the corresponding line from the project's `MEMORY.md` index (same line-shape note as above).
 4. **Keep:** No-op.
 
 After each action, print a one-line confirmation.
 
 ### Step 6 — Commit (per project)
 
-If the project's decoded path is a git repo and `CLAUDE.md` was modified, prepare a commit. Show the diff to the user, draft a commit message, ask for approval before committing. One commit per project (not per item) — the conventions added in this sweep are a single coherent batch.
+If the project's decoded path is a git repo and `CLAUDE.md` was modified, prepare a commit. **All git commands MUST use `git -C "$DECODED_PATH"` because the user's cwd is not the project being modified** — running plain `git status` or `git commit` would target the wrong repo.
 
-Suggested message format:
-```
+```bash
+DECODED_PATH="<decoded_path from inventory>"
+git -C "$DECODED_PATH" status
+git -C "$DECODED_PATH" diff CLAUDE.md MEMORY.md
+git -C "$DECODED_PATH" add CLAUDE.md MEMORY.md
+git -C "$DECODED_PATH" commit -m "$(cat <<'COMMIT_EOF'
 docs(memory-sweep): promote N memories to CLAUDE.md
 
 - "<memory name>" → Conventions §
 - "<memory name>" → Security Notes §
 
 Memories deleted from project memory after promotion.
+COMMIT_EOF
+)"
 ```
 
-Per the user's `~/.claude/CLAUDE.md`, commit messages MUST NOT include `Co-Authored-By` lines.
+Show the diff to the user, draft the commit message, ask for approval before committing. One commit per project (not per item) — the conventions added in this sweep are a single coherent batch. Per the user's `~/.claude/CLAUDE.md`, commit messages MUST NOT include `Co-Authored-By` lines.
 
-For projects that aren't git repos, skip the commit step but still print "files modified — not in a git repo, no commit attempted".
+To check whether `<decoded_path>` is a git repo at all (not every project is):
+
+```bash
+git -C "$DECODED_PATH" rev-parse --git-dir 2>/dev/null && echo "is git repo" || echo "not a git repo"
+```
+
+For projects that aren't git repos, skip the commit step but still print "files modified at $DECODED_PATH — not a git repo, no commit attempted".
 
 ### Step 7 — Print summary
 
