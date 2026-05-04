@@ -119,6 +119,11 @@ Each skill lives in its own directory with a `SKILL.md` file:
   vault-linker/
     SKILL.md            # Skill definition (frontmatter + step-by-step instructions)
     link.py             # Scans vault for entities, adds [[wiki links]] to existing files, generates index pages
+  review-memory/
+    SKILL.md            # Slash orchestration: discover → classify (model judgment) → per-item approval → execute
+    discover.py         # Scans ~/.claude/projects/*/memory/, captures frontmatter + body + mtime, flags possible duplicates → /tmp/review_memory/inventory.json
+  reflect/
+    SKILL.md            # Slash retro: pre-check → 7-section reflection → archive to vault → propose promotions → per-item approval → flow lessons into CLAUDE.md/memory
   schedules/
     install.sh                              # Install/unload macOS LaunchAgents from templates
     com.claude.sprint-pulse.plist.template  # Runs /sprint-pulse weekdays at 08:30
@@ -225,7 +230,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 
 | Variable | Used by |
 |----------|---------|
-| `OBSIDIAN_VAULT_PATH` | retro-summary |
+| `OBSIDIAN_VAULT_PATH` | retro-summary, reflect |
 | `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
 | `STATEMENTS_PATH` | bank-statement-to-markdown |

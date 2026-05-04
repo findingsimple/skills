@@ -24,6 +24,8 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [support-trends](support-trends/) | `/support-trends --team <name> [--window month\|YYYY-MM\|YYYY-MM-DD..YYYY-MM-DD]` | Build a leadership-grade monthly support trends report for one team. Three sub-agents (themes, support-feedback, synthesise) enrich a deterministic finding set; renderer rejects any claim without a metric and evidence keys. Output is a Markdown report written to the team's Obsidian vault under `Support/Trends/{year}/`, covering volume / themes / charter drift / L2 containment / categorisation / numbers. |
 | [support-ticket-triage](support-ticket-triage/) | `/support-ticket-triage <KEY>` | Triage a single Jira support ticket: fetch ticket + linked + similar resolved, delegate code investigation to a sub-agent, return a filled Resolution Summary with classification (Code Bug / PFR / Config Issue), exact file:line or table.column evidence, and tier-labelled steps with safeguards |
 | [vault-linker](vault-linker/) | `/vault-linker` | Add Obsidian `[[wiki links]]` to existing vault files by scanning for known entities (people, incidents, Jira keys) |
+| [review-memory](review-memory/) | `/review-memory [--project <name>]` | Sweep `~/.claude/projects/*/memory/` across all projects on this machine. For each memory entry, classify as keep / move-to-repo CLAUDE.md / move-to-global CLAUDE.md / delete with reasoning, and gate every action behind per-item user approval. Discovery is deterministic; classification is the model's judgment. |
+| [reflect](reflect/) | `/reflect [--skip-archive]` | End-of-session retrospective. Auto-archives a structured 7-section reflection file (Context / What Worked / What Went Sideways / Tips & Tricks / Generalization Opportunities / Action Items / Promoted To) to `${OBSIDIAN_VAULT_PATH}/Reflections/` for cross-laptop access via iCloud, then proposes promoting durable lessons into repo CLAUDE.md, `~/.claude/CLAUDE.md`, or memory with per-item user approval. |
 
 ## Scheduled Execution
 
@@ -372,3 +374,38 @@ Scan existing Obsidian vault files and add `[[wiki links]]` to known entities. L
 
 **Prerequisites:**
 - `OBSIDIAN_TEAMS_PATH` in `~/.zshrc`
+
+### review-memory
+
+Sweep `~/.claude/projects/*/memory/` across every project on this machine. For each accumulated memory entry, propose ONE action — keep, move to repo `CLAUDE.md`, move to global `~/.claude/CLAUDE.md`, or delete — with a one-sentence reason. Per-item user approval gates every side effect; no auto mode.
+
+```bash
+/review-memory                                              # all projects
+/review-memory --project /Users/jasonconroy/.claude/skills  # one project by decoded path
+/review-memory --project -Users-jasonconroy-hppy-connect    # one project by encoded dir name
+```
+
+Discovery is deterministic (`discover.py` walks the projects tree, decodes dir names, captures frontmatter + body + mtime, runs a conservative substring duplicate-check against the project's `CLAUDE.md`). Classification (which entries belong where) is the model's judgment.
+
+The split rule applied:
+- **Repo `CLAUDE.md`** — code/design conventions applicable to anyone touching the repo
+- **Project memory** — Claude collaboration preferences specific to this repo
+- **Global `~/.claude/CLAUDE.md`** — preferences applying to every project on this machine
+
+### reflect
+
+End-of-session retrospective. Auto-archives a structured 7-section reflection file to the iCloud-synced Obsidian vault (cross-laptop), then proposes promoting durable lessons into `CLAUDE.md`, global config, or memory with per-item approval. The flow-out is the point — without it the archive becomes write-only.
+
+```bash
+/reflect                  # full reflection + archive + per-item promotion approval
+/reflect --skip-archive   # in-conversation reflection only, no archive file
+```
+
+Sections: Context (1 line), What Worked (≤4), What Went Sideways (≤4), Tips & Tricks (≤3), Generalization Opportunities (≤4, each with an explicit promotion target), Action Items (checkboxes), Promoted To (footer recording where each lesson actually landed).
+
+Archive lands at `${OBSIDIAN_VAULT_PATH}/Reflections/<YYYY-MM-DD>-<slug>.md` with `tags: [reflection]` frontmatter for graph clustering. Falls back to `~/.claude/reflections/` (with a warning) if the env var is unset.
+
+Discipline rules baked into the framework: every bullet must cite a specific moment (no generic claims); section length is capped (anti-bloat); per-item approval for any CLAUDE.md/memory edits; second confirmation required for global CLAUDE.md edits even within an approve-all batch.
+
+**Prerequisites:**
+- `OBSIDIAN_VAULT_PATH` in `~/.zshrc` (optional but recommended — without it, reflections won't sync across laptops via iCloud)
