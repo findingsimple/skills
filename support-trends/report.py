@@ -66,12 +66,14 @@ def _atomic_write(path, body):
 # ---------------------------------------------------------------------------
 
 def _key_link(key, base_url):
-    """Render `[[KEY]]` if it's a valid Jira key. Wiki-link form keeps Obsidian
-    backlinks navigable; the actual Jira URL goes in the Numbers section once
-    per ticket if needed."""
-    if isinstance(key, str) and _KEY_RE.match(key):
-        return "[[%s]]" % key
-    return ""
+    """Render `[KEY](https://.../browse/KEY)` if it's a valid Jira key. Tickets
+    don't exist as files in the vault, so wiki-links would dead-end — link
+    straight to Jira instead. Falls back to bare `KEY` if base_url is missing."""
+    if not (isinstance(key, str) and _KEY_RE.match(key)):
+        return ""
+    if base_url:
+        return "[%s](%s/browse/%s)" % (key, base_url.rstrip("/"), key)
+    return key
 
 
 def _key_links(keys, base_url, max_keys=8):

@@ -6,7 +6,7 @@ Validation rules (rejected records are dropped with a WARNING; the run
 continues so a partially-bad sub-agent output doesn't block the whole report):
 
 - Each record MUST have a non-empty `ticket_keys` list (referenced by the
-  renderer to make `[[...]]` evidence links).
+  renderer to make Jira `/browse/KEY` evidence links).
 - Every key in `ticket_keys` MUST exist in the in-window ticket set we
   fetched. Hallucinated keys are dropped silently.
 - `confidence` is normalised to one of {high, medium, low}; anything else
