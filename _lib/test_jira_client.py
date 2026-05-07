@@ -183,5 +183,164 @@ class AdfToTextVariantsTests(unittest.TestCase):
         self.assertIn("- Second", out)
 
 
+class _FakeUrlopenContext:
+    """Minimal context manager stand-in for urllib.request.urlopen / urlopen_with_retry."""
+
+    def __init__(self, body):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return self._body
+
+
+class JiraPutTests(unittest.TestCase):
+    """jira_put round-trips the request body and returns the parsed response."""
+
+    def setUp(self):
+        self._real_retry = jira_client.urlopen_with_retry
+
+    def tearDown(self):
+        jira_client.urlopen_with_retry = self._real_retry
+
+    def test_put_returns_parsed_json(self):
+        captured = {}
+
+        def fake_retry(req, **kwargs):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = req.data
+            captured["content_type"] = req.get_header("Content-type")
+            return _FakeUrlopenContext(b'{"id":"42","ok":true}')
+
+        jira_client.urlopen_with_retry = fake_retry
+        out = jira_client.jira_put("https://x", "/rest/api/3/issue/PROJ-1/comment/42", "auth", {"body": "hi"})
+        self.assertEqual(out, {"id": "42", "ok": True})
+        self.assertEqual(captured["method"], "PUT")
+        self.assertEqual(captured["content_type"], "application/json")
+        self.assertEqual(captured["body"], b'{"body": "hi"}')
+
+    def test_put_returns_none_for_empty_body(self):
+        jira_client.urlopen_with_retry = lambda req, **kw: _FakeUrlopenContext(b"")
+        self.assertIsNone(jira_client.jira_put("https://x", "/p", "auth", {}))
+
+    def test_put_raises_on_http_error(self):
+        import urllib.error
+        import io
+
+        def fake_retry(req, **kwargs):
+            raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, io.BytesIO(b"denied"))
+
+        jira_client.urlopen_with_retry = fake_retry
+        with self.assertRaises(Exception) as ctx:
+            jira_client.jira_put("https://x", "/p", "auth", {})
+        self.assertIn("403", str(ctx.exception))
+        self.assertIn("PUT /p", str(ctx.exception))
+
+
+class JiraGetCommentsIdTests(unittest.TestCase):
+    """Regression: jira_get_comments must include the comment id so callers can update or
+    delete a specific comment by ID."""
+
+    def setUp(self):
+        self._real_jira_get = jira_client.jira_get
+
+    def tearDown(self):
+        jira_client.jira_get = self._real_jira_get
+
+    def test_id_field_is_populated(self):
+        jira_client.jira_get = lambda base_url, path, auth: {
+            "comments": [
+                {
+                    "id": "10042",
+                    "author": {"displayName": "Alex Chen"},
+                    "created": "2026-04-01T10:00:00.000+0000",
+                    "body": {"type": "doc", "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]},
+                    ]},
+                },
+            ],
+        }
+        out = jira_client.jira_get_comments("https://x", "auth", "PROJ-1")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["id"], "10042")
+        self.assertEqual(out[0]["author"], "Alex Chen")
+        self.assertEqual(out[0]["body_text"], "Hello")
+
+    def test_missing_id_falls_back_to_empty_string(self):
+        jira_client.jira_get = lambda base_url, path, auth: {
+            "comments": [
+                {
+                    "author": {"displayName": "Bot"},
+                    "created": "",
+                    "body": {},
+                },
+            ],
+        }
+        out = jira_client.jira_get_comments("https://x", "auth", "PROJ-2")
+        self.assertEqual(out[0]["id"], "")
+
+    def test_author_account_id_populated(self):
+        jira_client.jira_get = lambda base_url, path, auth: {
+            "comments": [
+                {
+                    "id": "1",
+                    "author": {"displayName": "Alex", "accountId": "acct-abc-123"},
+                    "body": {},
+                },
+            ],
+        }
+        out = jira_client.jira_get_comments("https://x", "auth", "PROJ-1")
+        self.assertEqual(out[0]["author_account_id"], "acct-abc-123")
+
+    def test_author_explicitly_none_does_not_crash(self):
+        # Real production shape: Jira sometimes returns author=null on system events.
+        jira_client.jira_get = lambda base_url, path, auth: {
+            "comments": [
+                {"id": "1", "author": None, "body": {}},
+            ],
+        }
+        out = jira_client.jira_get_comments("https://x", "auth", "PROJ-1")
+        self.assertEqual(out[0]["author"], "")
+        self.assertEqual(out[0]["author_account_id"], "")
+
+
+class JiraGetMyselfTests(unittest.TestCase):
+    """The author check in comment.py depends on /myself returning a stable accountId."""
+
+    def setUp(self):
+        self._real_jira_get = jira_client.jira_get
+
+    def tearDown(self):
+        jira_client.jira_get = self._real_jira_get
+
+    def test_returns_account_id_and_name(self):
+        captured = {}
+
+        def fake_get(base_url, path, auth):
+            captured["path"] = path
+            return {"accountId": "acct-bot", "displayName": "Skills Bot"}
+
+        jira_client.jira_get = fake_get
+        out = jira_client.jira_get_myself("https://x", "auth")
+        self.assertEqual(captured["path"], "/rest/api/3/myself")
+        self.assertEqual(out, {"account_id": "acct-bot", "display_name": "Skills Bot"})
+
+    def test_missing_fields_fall_back_to_empty_string(self):
+        jira_client.jira_get = lambda base_url, path, auth: {}
+        out = jira_client.jira_get_myself("https://x", "auth")
+        self.assertEqual(out, {"account_id": "", "display_name": ""})
+
+    def test_none_response_does_not_crash(self):
+        jira_client.jira_get = lambda base_url, path, auth: None
+        out = jira_client.jira_get_myself("https://x", "auth")
+        self.assertEqual(out, {"account_id": "", "display_name": ""})
+
+
 if __name__ == "__main__":
     unittest.main()

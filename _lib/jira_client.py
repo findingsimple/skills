@@ -47,8 +47,14 @@ def jira_get(base_url, path, auth):
         raise Exception("Jira API %d on %s: %s" % (e.code, path, body)) from None
 
 
-def jira_post(base_url, path, auth, data):
-    """POST JSON to the Jira API and return the parsed response (or None)."""
+def _jira_write(method, base_url, path, auth, data):
+    """Shared body for jira_post / jira_put. Routes through `urlopen_with_retry`
+    so transient 429/503 + network errors retry consistently. Note: POST is not
+    idempotent at the protocol level — a retried POST can in rare cases create
+    a duplicate resource if the first attempt reached the server but the
+    response was lost. Callers that care should detect and clean up duplicates
+    on the next invocation (e.g. comment.py's `find_ai_comments`).
+    """
     req_body = json.dumps(data).encode()
     req = urllib.request.Request(
         base_url + path,
@@ -58,17 +64,27 @@ def jira_post(base_url, path, auth, data):
             "Accept": "application/json",
             "Content-Type": "application/json",
         },
-        method="POST",
+        method=method,
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urlopen_with_retry(req) as resp:
             response_body = resp.read()
             if response_body:
                 return json.loads(response_body)
             return None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
-        raise Exception("Jira API %d on POST %s: %s" % (e.code, path, body)) from None
+        raise Exception("Jira API %d on %s %s: %s" % (e.code, method, path, body)) from None
+
+
+def jira_post(base_url, path, auth, data):
+    """POST JSON to the Jira API and return the parsed response (or None)."""
+    return _jira_write("POST", base_url, path, auth, data)
+
+
+def jira_put(base_url, path, auth, data):
+    """PUT JSON to the Jira API and return the parsed response (or None)."""
+    return _jira_write("PUT", base_url, path, auth, data)
 
 
 def jira_search_all(base_url, auth, jql, fields, limit=None):
@@ -191,12 +207,24 @@ def jira_get_comments(base_url, auth, issue_key):
     comments = []
     for c in data.get("comments", []):
         body_text = adf_to_text(c.get("body", {}))
+        author = c.get("author") or {}
         comments.append({
-            "author": c.get("author", {}).get("displayName", ""),
+            "id": c.get("id", ""),
+            "author": author.get("displayName", ""),
+            "author_account_id": author.get("accountId", ""),
             "created": c.get("created", ""),
             "body_text": body_text,
         })
     return comments
+
+
+def jira_get_myself(base_url, auth):
+    """Return the calling user's accountId (and displayName) via /rest/api/3/myself."""
+    data = jira_get(base_url, "/rest/api/3/myself", auth)
+    return {
+        "account_id": (data or {}).get("accountId", ""),
+        "display_name": (data or {}).get("displayName", ""),
+    }
 
 
 def adf_to_text(adf):

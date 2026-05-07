@@ -1,8 +1,8 @@
 ---
 name: root-cause-triage
-description: Collects root cause ticket data to Obsidian knowledge base and analyzes for duplicates, quality, and completeness. Use when the user asks to collect root cause data, check for duplicate issues, or assess issue quality.
+description: Collects root cause ticket data to Obsidian knowledge base, analyzes for duplicates, quality, and completeness, and posts AI-enriched info back to Jira tickets as comments. Use when the user asks to collect root cause data, check for duplicate issues, assess issue quality, or push enriched info back to Jira.
 disable-model-invocation: true
-argument-hint: "[collect|analyze] [--issue KEY] [--status STATUS] [--dry-run] [--force] [--index-only]"
+argument-hint: "[collect|analyze|comment] [--issue KEY] [--keys K1,K2] [--from-file PATH] [--status STATUS] [--dry-run] [--force] [--index-only]"
 ---
 
 # Root Cause Triage
@@ -11,19 +11,22 @@ Two modes for working with root cause tickets under the triage board:
 
 - **collect** — fetch Jira data and build a per-issue Obsidian knowledge base
 - **analyze** — structural + semantic analysis on collected data (completeness, duplicates, quality assessment)
+- **comment** — post (or update) an AI-enriched comment back to a Jira ticket using the vault file as the source of truth. Manual, retroactive — never invoked automatically.
 
 Uses `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` environment variables.
 
 > **Output path scope:** `TRIAGE_OUTPUT_PATH` must point to a cross-team location (e.g., `…/Obsidian/HappyCo/Root Cause Triage`), not a per-team folder like `…/Teams/<TeamName>/`. Root causes are cross-team artifacts. When echoing the path in Step 1, read the env var directly — never invent a team-scoped default.
 
-### Argument allow-lists (`collect.py`, `analyze.py`)
+### Argument allow-lists (`collect.py`, `analyze.py`, `comment.py`)
 
-For JQL-injection safety, the following inputs are validated against strict allow-lists before interpolation:
+For JQL- and URL-injection safety, the following inputs are validated against strict allow-lists before interpolation:
 
 | Input | Allowed pattern | Notes |
 |-------|-----------------|-------|
-| `TRIAGE_PARENT_ISSUE_KEY` env | `^[A-Z][A-Z0-9_]+-\d+$` | Standard Jira issue key |
-| `--issue KEY` | `^[A-Z][A-Z0-9_]+-\d+$` | Same as above |
+| `TRIAGE_PARENT_ISSUE_KEY` env | `\A[A-Z][A-Z0-9_]+-\d+\Z` | Standard Jira issue key |
+| `--issue KEY` | `\A[A-Z][A-Z0-9_]+-\d+\Z` | Same as above |
+| `--keys K1,K2,…` | `\A[A-Z][A-Z0-9_]+-\d+\Z` per element | Comment mode batch input (split on commas, trimmed, then validated) |
+| `--from-file PATH` lines | `\A[A-Z][A-Z0-9_]+-\d+\Z` per line | Comment mode batch input (one key per line) |
 | `--status STATUS` | `^[A-Za-z][A-Za-z0-9 _\-/:&.']*$` | Covers real-world statuses like `"In Review/QA"`, `"Blocked: External"` |
 
 If a board uses a status name with characters outside this set, widen `_STATUS_RE` in `collect.py` after auditing JQL-injection risk.
@@ -38,7 +41,8 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 
 | File | Purpose |
 |------|---------|
-| `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_search_all`, `adf_to_text` |
+| `jira_client.py` | Shared Jira API client — `load_env`, `init_auth`, `jira_get`, `jira_post`, `jira_put`, `jira_search_all`, `jira_get_comments`, `adf_to_text` |
+| `comment.py` | Mode: comment — parse vault Markdown for the requested keys, build ADF body, post or update a single AI-enriched comment per Jira ticket |
 | `collect.py` | Mode: collect — fetch issues + linked issue details, save per-issue JSON to `/tmp/triage_collect/` |
 | `summarize.py` | Mode: collect — read per-issue JSON, generate Obsidian Markdown with extractive summaries |
 | `enrich.py` | Mode: collect — prepare agent batches and apply enriched summaries to Markdown files |
@@ -59,7 +63,7 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 
 Parse `$ARGUMENTS` to determine the mode:
 
-- First positional argument: `collect` or `analyze`
+- First positional argument: `collect`, `analyze`, or `comment`
 - If no mode specified, ask the user which mode to run
 - Remaining arguments are passed through to the relevant script
 
@@ -343,3 +347,48 @@ Show a consolidated summary referencing both reports. Highlight:
 - Issue type SOP mismatches (count from the "Issue Type SOP Check" section — user retypes manually in Jira)
 
 This is informational — the user reviews the reports in Obsidian and decides next steps.
+
+---
+
+## Mode: Comment
+
+Post (or update) an AI-enriched comment back to a Jira ticket using the vault file as the source of truth. This is the only mode that mutates Jira state. The original ticket description and other fields are **never** modified — only a single dedicated comment is created or updated.
+
+> **Manual / retroactive only.** This mode is never invoked automatically by `collect` or `analyze`. The user runs it deliberately for tickets they want to push enriched info back to. The comment is visible to anyone who can view the ticket.
+
+### Idempotency
+
+Each comment begins with the literal header `🤖 AI enriched root cause information`. On a subsequent run for the same key, the script detects this header on an existing comment and updates that comment in place (HTTP `PUT`) rather than posting a new one. Edits made to the vault Markdown therefore propagate to Jira without spamming the activity feed.
+
+**Author check.** Before any update, the script calls `/rest/api/3/myself` once to learn its own `accountId`, and refuses to `PUT` over a marker comment authored by anyone else. If a foreign-author marker is found, the script logs a warning and posts a fresh comment alongside it — your enrichment still lands, the foreign comment is left intact, and the next run picks up the new comment as "ours".
+
+If multiple AI comments authored by us are present (e.g., copy-pasted), only the first match is updated and a warning is printed.
+
+### Step CM1 — Run comment.py
+
+```bash
+python3 ~/.claude/skills/root-cause-triage/comment.py --issue PROJ-123 [--dry-run]
+python3 ~/.claude/skills/root-cause-triage/comment.py --keys PROJ-123,PROJ-124 [--dry-run]
+python3 ~/.claude/skills/root-cause-triage/comment.py --from-file /tmp/keys.txt [--dry-run]
+```
+
+Exactly one of `--issue` / `--keys` / `--from-file` is required. There is intentionally no "comment on every enriched ticket" sweep — pick keys explicitly.
+
+The script:
+
+1. Validates each key against the standard Jira-key allow-list (see "Argument allow-lists" above) and rejects the entire batch on the first invalid key.
+2. Resolves each key's vault Markdown file at `{TRIAGE_OUTPUT_PATH}/Issues/{KEY} — *.md`. If no file is found, prints `skipped {KEY} — vault file missing` and continues with the next key.
+3. Strips frontmatter, then extracts:
+   - `## Root Cause Analysis` content (no per-section confidence — the enrichment prompt does not produce one).
+   - Each `### {section}` under `## Auto-filled Template Sections`, capturing the `*Confidence: high|medium|low*` line that follows the heading.
+   - Sections rendering only `*(insufficient evidence)*` are skipped.
+4. Builds an Atlassian Document Format (ADF) body containing the marker header, an italic explanatory note, and one heading-3 + content block per surviving section.
+5. Fetches the ticket's existing comments. If a prior comment whose first line is the marker header is found, `PUT`s the new body to `/rest/api/3/issue/{KEY}/comment/{commentId}`. Otherwise `POST`s to `/rest/api/3/issue/{KEY}/comment`.
+
+### Dry-run behaviour
+
+`--dry-run` prints the resolved vault path, the sections that were detected, and the full ADF JSON body for each ticket — no network calls. Use this to preview the comment shape before posting for the first time, or to confirm a vault edit produces the expected output.
+
+### Exit code
+
+The script exits non-zero only if **every** requested ticket was skipped (no vault file or no enrichment for any key). A partial batch — some posted, some skipped — is treated as success so a long batch is not aborted by a few missing tickets.

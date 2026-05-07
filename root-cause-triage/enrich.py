@@ -22,6 +22,9 @@ from batch_results import (
 )
 from jira_client import load_env, ensure_tmp_dir
 
+sys.path.insert(0, os.path.dirname(__file__))
+from _vault import find_issue_markdown
+
 
 ENV_KEYS = ["JIRA_BASE_URL", "TRIAGE_OUTPUT_PATH"]
 
@@ -199,15 +202,12 @@ def cmd_apply(args):
     skipped = 0
 
     for key, enrichment in results.items():
-        # Find the markdown file for this key
-        pattern = os.path.join(issues_dir, "%s — *.md" % key)
-        matches = glob.glob(pattern)
-        if not matches:
+        md_path = find_issue_markdown(issues_dir, key)
+        if not md_path:
             print("  SKIP %s — no Markdown file found" % key)
             skipped += 1
             continue
 
-        md_path = matches[0]
         with open(md_path) as f:
             content = f.read()
 
