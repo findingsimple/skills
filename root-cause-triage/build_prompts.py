@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Build agent prompts for analyze mode Steps A2a, A2b, A2c.
+"""Build agent prompts for analyze mode Steps A2a, A2b, A2c, A2e.
 
-Reads /tmp/triage_analysis.json (+ enrichment/autofill data for A2b/A2c),
+Reads /tmp/triage_analysis.json (+ enrichment/autofill data for A2b/A2c/A2e),
 builds batch prompt files, and writes a manifest for agent orchestration.
 
 Usage:
     python3 build_prompts.py raw-quality [--batch-size 10]
     python3 build_prompts.py post-enrich-quality [--batch-size 10]
     python3 build_prompts.py duplicates
+    python3 build_prompts.py type-sop [--batch-size 15]
     python3 build_prompts.py all [--batch-size 10]
 
 Output directories:
-    /tmp/triage_prompts/raw-quality/       batch_N.txt + batches.json
+    /tmp/triage_prompts/raw-quality/         batch_N.txt + batches.json
     /tmp/triage_prompts/post-enrich-quality/ batch_N.txt + batches.json
-    /tmp/triage_prompts/duplicates/        prompt.txt + batches.json
+    /tmp/triage_prompts/duplicates/          prompt.txt + batches.json
+    /tmp/triage_prompts/type-sop/            batch_N.txt + batches.json
 """
 
 import argparse
@@ -480,12 +482,150 @@ def build_duplicates(issues):
 
 
 # ---------------------------------------------------------------------------
+# Issue type SOP check prompt (Step A2e)
+# ---------------------------------------------------------------------------
+
+PROMPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TYPE_SOP_PROMPT_PATH = os.path.join(PROMPT_DIR, "TYPE_SOP_PROMPT.md")
+
+TYPE_SOP_FOOTER = """
+**IMPORTANT:** Write ONLY the JSON to {output_path} using the Bash tool. No preamble, no commentary, no markdown fences — just the raw JSON starting with `[` and ending with `]`. After writing, confirm the file was saved.
+"""
+
+
+def _load_type_sop_header():
+    with open(TYPE_SOP_PROMPT_PATH) as f:
+        return f.read().rstrip() + "\n\n"
+
+
+def format_type_sop_issue(iss, enrichments, autofills):
+    """Format a single issue for the type SOP check prompt."""
+    key = iss["key"]
+    lines = []
+    lines.append("### %s — %s" % (key, iss["summary"]))
+    lines.append("**Current issue type:** %s" % (iss.get("issue_type") or "(unknown)"))
+    if iss.get("linked_support_count", 0) > 0:
+        lines.append("**Support tickets:** %d" % iss["linked_support_count"])
+    if iss.get("linked_issue_count", 0) > 0:
+        lines.append("**Linked issues:** %d" % iss["linked_issue_count"])
+
+    enrich = enrichments.get(key)
+    if enrich:
+        classification = enrich.get("classification", "unknown")
+        rca = (enrich.get("root_cause_analysis") or "")[:300]
+        lines.append("**AI classification:** %s" % classification)
+        if rca:
+            lines.append("**Root cause analysis:** %s" % rca)
+
+    autofill = autofills.get(key)
+    if autofill and isinstance(autofill.get("sections"), dict):
+        analysis = autofill["sections"].get("Analysis", {})
+        if analysis:
+            content = (analysis.get("content") or "")[:250]
+            if content:
+                lines.append("**Analysis:** %s" % content)
+
+    desc = (iss.get("description") or "").strip()
+    if desc:
+        lines.append("")
+        lines.append("**Description:**")
+        lines.append(desc[:600])
+    else:
+        lines.append("**Description:** (empty)")
+
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _trusted_type_reviewers():
+    """Parse TRUSTED_TYPE_REVIEWERS env var into a set of display names.
+
+    Comma-separated list. Example: ``Dan Eldridge, Joel Small``. Empty by default.
+    Names are matched case-sensitively against the changelog `author` field —
+    Jira returns these as the user's display name (not username) so the env var
+    should be configured with the displayed names exactly as they appear in Jira.
+    """
+    raw = os.environ.get("TRUSTED_TYPE_REVIEWERS", "")
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def _filter_by_trusted_reviewer(issues, trusted):
+    """Split issues into (kept, skipped). Skipped = last issuetype change author is in trusted set.
+
+    Issues with no `last_issuetype_change` (never reviewed, or collected before this
+    field was added) are kept — the agent gets to suggest as normal.
+    """
+    if not trusted:
+        return issues, []
+    kept, skipped = [], []
+    for iss in issues:
+        change = iss.get("last_issuetype_change")
+        author = (change or {}).get("author", "")
+        if author and author in trusted:
+            skipped.append(iss)
+        else:
+            kept.append(iss)
+    return kept, skipped
+
+
+def build_type_sop(issues, batch_size):
+    out_dir = os.path.join(PROMPT_BASE, "type-sop")
+    ensure_tmp_dir(out_dir)
+
+    enrichments = load_enrichments()
+    autofills = load_autofills()
+    header = _load_type_sop_header()
+
+    trusted = _trusted_type_reviewers()
+    issues, skipped_trusted = _filter_by_trusted_reviewer(issues, trusted)
+    if skipped_trusted:
+        skipped_keys = ", ".join(s["key"] for s in skipped_trusted[:8])
+        more = "" if len(skipped_trusted) <= 8 else " (and %d more)" % (len(skipped_trusted) - 8)
+        print("type-sop: skipping %d issue(s) last typed by trusted reviewers (%s): %s%s" % (
+            len(skipped_trusted), ", ".join(sorted(trusted)), skipped_keys, more))
+
+    batches = []
+    for i in range(0, len(issues), batch_size):
+        batch = issues[i:i + batch_size]
+        batch_num = i // batch_size
+        output_path = os.path.join(out_dir, "results_batch_%d.json" % batch_num)
+
+        prompt = header
+        for iss in batch:
+            prompt += format_type_sop_issue(iss, enrichments, autofills)
+        prompt += TYPE_SOP_FOOTER.format(output_path=output_path)
+
+        batch_file = os.path.join(out_dir, "batch_%d.txt" % batch_num)
+        with open(batch_file, "w") as f:
+            f.write(prompt)
+
+        batches.append({
+            "batch_num": batch_num,
+            "batch_file": batch_file,
+            "output_file": output_path,
+            "issue_count": len(batch),
+            "keys": [iss["key"] for iss in batch],
+        })
+
+    manifest = {"type": "type-sop", "batch_count": len(batches), "batches": batches}
+    manifest_path = os.path.join(out_dir, "batches.json")
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    os.replace(tmp_path, manifest_path)
+
+    return manifest
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Build agent prompts for analyze mode")
-    parser.add_argument("subcommand", choices=["raw-quality", "post-enrich-quality", "duplicates", "all"])
+    parser.add_argument("subcommand", choices=["raw-quality", "post-enrich-quality", "duplicates", "type-sop", "all"])
     parser.add_argument("--batch-size", type=int, default=10)
     args = parser.parse_args()
 
@@ -497,7 +637,7 @@ def main():
     print("Loaded %d issues from %s" % (len(issues), ANALYSIS_PATH))
 
     commands = [args.subcommand] if args.subcommand != "all" else [
-        "raw-quality", "post-enrich-quality", "duplicates",
+        "raw-quality", "post-enrich-quality", "duplicates", "type-sop",
     ]
 
     for cmd in commands:
@@ -514,6 +654,11 @@ def main():
         elif cmd == "duplicates":
             manifest = build_duplicates(issues)
             print("duplicates: 1 prompt written to %s" % os.path.join(PROMPT_BASE, "duplicates"))
+
+        elif cmd == "type-sop":
+            manifest = build_type_sop(issues, args.batch_size)
+            print("type-sop: %d batches written to %s" % (
+                manifest["batch_count"], os.path.join(PROMPT_BASE, "type-sop")))
 
 
 if __name__ == "__main__":

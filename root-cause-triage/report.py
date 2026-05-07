@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 
 ENRICHED_PATH = "/tmp/triage_analysis_enriched.json"
 CLUSTERS_PATH = "/tmp/triage_duplicates/clusters.json"
+TYPE_SUGGESTIONS_PATH = "/tmp/triage_type_suggestions.json"
+SOP_LINK_KEY = "PDE-13499"
 
 ENV_KEYS = ["TRIAGE_OUTPUT_PATH", "JIRA_BASE_URL"]
 
@@ -41,6 +43,20 @@ def jira_link(key, base_url):
         return "[%s](%s/browse/%s)" % (key, base_url, key)
     return key
 
+
+
+def table_cell(text):
+    """Make text safe for a Markdown table cell — escape pipes and flatten newlines."""
+    if text is None:
+        return "--"
+    s = str(text).strip()
+    if not s:
+        return "--"
+    s = s.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    s = s.replace("|", "\\|")
+    return s
 
 
 def truncate(text, max_len=80):
@@ -77,6 +93,16 @@ def load_clusters():
         return []
     with open(CLUSTERS_PATH) as f:
         return json.load(f)
+
+
+def load_type_suggestions():
+    if not os.path.exists(TYPE_SUGGESTIONS_PATH):
+        return []
+    try:
+        with open(TYPE_SUGGESTIONS_PATH) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +269,7 @@ def build_raw_report(issues, clusters, base_url):
     lines.append("| Key | Quality | Note | Dup Assessment | Recurrence | Action |")
     lines.append("|-----|---------|------|----------------|------------|--------|")
     for iss in issues:
-        note = truncate(iss.get("quality_note"), 80)
+        note = table_cell(iss.get("quality_note"))
         dup_a = iss.get("duplicate_assessment", "n/a") or "n/a"
         rec_a = iss.get("recurrence_assessment", "n/a") or "n/a"
         action = iss.get("recommended_action", "--") or "--"
@@ -370,7 +396,64 @@ def _build_issue_table(group, base_url, enriched=False):
 # Enriched Analysis report
 # ---------------------------------------------------------------------------
 
-def build_enriched_report(issues, clusters, base_url):
+def _render_type_sop_section(type_suggestions, base_url, total_issues):
+    """Render the Issue Type SOP Check section. Returns list of lines."""
+    lines = []
+    lines.append("## Issue Type SOP Check")
+    lines.append("")
+    lines.append("Validates that each root cause uses the correct Jira issue type per the SOP. Allowed types: **Bug** (software defects), **Documentation** (missing docs), **Feature Gap** (capability users should reasonably have), **Task** (release flag rollouts), **Request** (admin changes for customers), **Process Gap** (process improvements). Tickets that read as SOP adherence misses are surfaced separately for linking to PDE-13499 instead of retyping.")
+    lines.append("")
+
+    retypes = [s for s in type_suggestions if s.get("suggested_type")]
+    sop_links = [s for s in type_suggestions if s.get("sop_link_suggestion") and not s.get("suggested_type")]
+
+    if not retypes and not sop_links:
+        lines.append("All %d analyzed root causes have an issue type that matches the SOP. No suggestions." % total_issues)
+        lines.append("")
+        return lines
+
+    if retypes:
+        lines.append("### Suggested Type Changes (%d)" % len(retypes))
+        lines.append("")
+        lines.append("| Key | Current | Suggested | Confidence | Rationale |")
+        lines.append("|-----|---------|-----------|------------|-----------|")
+        # Sort: high confidence first, then medium, then low.
+        order = {"high": 0, "medium": 1, "low": 2}
+        retypes_sorted = sorted(retypes, key=lambda s: order.get(s.get("confidence"), 3))
+        for s in retypes_sorted:
+            confidence = s.get("confidence") or "--"
+            rationale = table_cell(s.get("rationale"))
+            lines.append("| %s | %s | %s | %s | %s |" % (
+                jira_link(s["key"], base_url),
+                s.get("current_type") or "--",
+                s.get("suggested_type") or "--",
+                confidence,
+                rationale,
+            ))
+        lines.append("")
+
+    if sop_links:
+        lines.append("### SOP Adherence Miss Candidates (%d)" % len(sop_links))
+        lines.append("")
+        lines.append("These tickets read more like \"we didn't follow our process\" than a typed root cause — consider linking to %s instead of retyping." % jira_link(SOP_LINK_KEY, base_url))
+        lines.append("")
+        lines.append("| Key | Current Type | Confidence | Rationale |")
+        lines.append("|-----|--------------|------------|-----------|")
+        for s in sop_links:
+            rationale = table_cell(s.get("rationale"))
+            confidence = s.get("confidence") or "--"
+            lines.append("| %s | %s | %s | %s |" % (
+                jira_link(s["key"], base_url),
+                s.get("current_type") or "--",
+                confidence,
+                rationale,
+            ))
+        lines.append("")
+
+    return lines
+
+
+def build_enriched_report(issues, clusters, base_url, type_suggestions=None):
     now = datetime.now(timezone.utc).isoformat()
     date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -459,7 +542,7 @@ def build_enriched_report(issues, clusters, base_url):
         upgrade_marker = ""
         if raw_val in ("thin", "vague") and post_val == "good":
             upgrade_marker = " **\u2191**"
-        note = truncate(iss.get("post_enrich_note"), 80)
+        note = table_cell(iss.get("post_enrich_note"))
         action = iss.get("post_enrich_action", "--") or "--"
         lines.append("| %s | %s | %s%s | %s | %s |" % (
             jira_link(iss["key"], base_url), raw_val, post_val,
@@ -485,7 +568,7 @@ def build_enriched_report(issues, clusters, base_url):
         for c in dup_clusters:
             primary = jira_link(c.get("primary", ""), base_url)
             dups = ", ".join(jira_link(k, base_url) for k in c.get("duplicates", []))
-            rationale = truncate(c.get("rationale", ""), 80)
+            rationale = table_cell(c.get("rationale"))
             lines.append("| %s | %s | %s |" % (primary, dups, rationale))
         lines.append("")
     else:
@@ -510,6 +593,9 @@ def build_enriched_report(issues, clusters, base_url):
     else:
         lines.append("No related clusters identified.")
         lines.append("")
+
+    # Issue Type SOP Check (A2e)
+    lines.extend(_render_type_sop_section(type_suggestions or [], base_url, len(issues)))
 
     # Needs More Information (post-enrichment)
     more_info_group = [i for i in issues if i.get("post_enrich_action") == "more_info"]
@@ -569,8 +655,10 @@ def main():
 
     issues = load_enriched()
     clusters = load_clusters()
+    type_suggestions = load_type_suggestions()
 
-    print("Loaded %d issues, %d clusters" % (len(issues), len(clusters)))
+    print("Loaded %d issues, %d clusters, %d type suggestions" % (
+        len(issues), len(clusters), len(type_suggestions)))
 
     analysis_dir = os.path.join(output_path, "Analysis")
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -579,7 +667,7 @@ def main():
     enriched_path = os.path.join(analysis_dir, "Enriched Analysis - %s.md" % date_str)
 
     raw_content = build_raw_report(issues, clusters, base_url)
-    enriched_content = build_enriched_report(issues, clusters, base_url)
+    enriched_content = build_enriched_report(issues, clusters, base_url, type_suggestions)
 
     if args.dry_run:
         print("\n[dry-run] Would write:")

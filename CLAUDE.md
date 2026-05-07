@@ -22,6 +22,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
     gitlab_client.py                 # load_gitlab_env, gitlab_get, gitlab_get_all, search_mrs_for_issue, get_mr_notes
     confluence_client.py             # Confluence API client (load_env, auth, get page, get children, CQL search, adf_to_text, storage_to_text)
     bonusly_client.py                # Bonusly API client (load_env, get, paginated get)
+    batch_results.py                 # Per-batch agent result file convention (PROMPT_FOOTER, existing_result_keys, load_results, materialize_per_key_cache) shared by enrich.py / autofill.py
     test_*.py                        # Unit tests for each module above (no network — urlopen / inner clients are stubbed). Run with `cd _lib && python3 -m unittest discover -p 'test_*.py'`.
   bank-statement-to-markdown/
     SKILL.md            # Skill definition (frontmatter + PDF extraction templates)
@@ -57,6 +58,7 @@ Each skill lives in its own directory with a `SKILL.md` file:
     QUALITY_PROMPT.md   # Agent prompt for raw quality assessment (analyze Step A2a)
     POST_ENRICH_QUALITY_PROMPT.md  # Agent prompt for post-enrichment quality assessment (analyze Step A2b)
     DUPLICATE_PROMPT.md # Agent prompt for semantic duplicate detection (analyze Step A2c)
+    TYPE_SOP_PROMPT.md  # Agent prompt for issue type SOP check (analyze Step A2e)
   sprint-metrics/
     SKILL.md
     _libpath.py
@@ -140,7 +142,7 @@ import _libpath  # noqa: F401
 from jira_client import load_env, init_auth, jira_get, jira_search_all
 ```
 
-`_lib/` currently exposes five modules: `_http` (HTTP retry helper used by the four clients), `jira_client`, `gitlab_client`, `confluence_client`, `bonusly_client`. Each has a sibling `test_*.py` that monkey-patches the inner HTTP function or `urlopen` so no network is required. Run the full suite with `cd _lib && python3 -m unittest discover -p 'test_*.py'`. Per-skill `setup.py` files are intentionally NOT shared — each skill validates a different env-var set and pings different endpoints.
+`_lib/` currently exposes six modules: `_http` (HTTP retry helper used by the four clients), `jira_client`, `gitlab_client`, `confluence_client`, `bonusly_client`, and `batch_results` (per-batch agent result file conventions). Each has a sibling `test_*.py` that monkey-patches the inner HTTP function or `urlopen` so no network is required. Run the full suite with `cd _lib && python3 -m unittest discover -p 'test_*.py'`. Per-skill `setup.py` files are intentionally NOT shared — each skill validates a different env-var set and pings different endpoints.
 
 When adding a new shared module:
 1. Drop it in `_lib/` with no docstring tied to a specific skill.
@@ -246,6 +248,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `TRIAGE_BOARD_ID` | root-cause-triage |
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
 | `TRIAGE_OUTPUT_PATH` | root-cause-triage |
+| `TRUSTED_TYPE_REVIEWERS` | root-cause-triage (optional; comma-separated Jira display names whose prior `issuetype` change suppresses the type-sop suggestion) |
 | `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage, support-routing-audit, root-cause-suggest, support-trends |
 | `CODEBASE_PATH` | support-ticket-triage (absolute path to codebase for sub-agent investigation) |
 | `CODE_SEARCH_EXTENSIONS` | support-ticket-triage (optional; comma-separated file extensions, default `rb,ts,tsx,go,py,js,jsx,rs,java`) |

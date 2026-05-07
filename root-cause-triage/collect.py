@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 import _libpath  # noqa: F401
-from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text, ensure_tmp_dir
+from jira_client import load_env, init_auth, jira_get, jira_search_all, adf_to_text, ensure_tmp_dir, jira_get_changelog
 
 
 ENV_KEYS = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "TRIAGE_BOARD_ID", "TRIAGE_PARENT_ISSUE_KEY", "TRIAGE_OUTPUT_PATH"]
@@ -83,6 +83,28 @@ def fetch_all_issues(base_url, auth, parent_key, status_filter=None, include_don
         jql += " AND NOT (statusCategory = Done AND NOT (updated >= -2w))"
     jql += " ORDER BY created ASC"
     return jira_search_all(base_url, auth, jql, FIELDS)
+
+
+def extract_last_issuetype_change(changelog):
+    """Find the most recent `issuetype` field change in a Jira changelog.
+
+    Returns a dict ``{author, date, from, to}`` for the latest change, or ``None``
+    if the issue type has never been changed (i.e. it's still the type set on creation).
+    Used by the type-sop check to honour prior human review by trusted reviewers.
+    """
+    if not changelog:
+        return None
+    # Changelog entries are returned in chronological order; iterate newest-first.
+    for entry in reversed(changelog):
+        for item in entry.get("items", []) or []:
+            if item.get("field") == "issuetype":
+                return {
+                    "author": entry.get("author", "") or "",
+                    "date": (entry.get("created", "") or "")[:10],
+                    "from": item.get("from_string", "") or "",
+                    "to": item.get("to_string", "") or "",
+                }
+    return None
 
 
 def fetch_subtask_descriptions(base_url, auth, subtasks):
@@ -225,6 +247,15 @@ def process_issue(base_url, auth, issue, status_column_map=None):
 
     total_links = sum(len(stubs) for stubs in linked_issues.values())
 
+    # Capture the most recent issuetype change so the type-sop check can honour
+    # prior human review by trusted reviewers (TRUSTED_TYPE_REVIEWERS env var).
+    last_issuetype_change = None
+    try:
+        changelog = jira_get_changelog(base_url, auth, key)
+        last_issuetype_change = extract_last_issuetype_change(changelog)
+    except Exception as e:
+        print("WARNING: changelog fetch failed for %s: %s" % (key, e), file=sys.stderr)
+
     return {
         "key": key,
         "summary": summary,
@@ -241,6 +272,7 @@ def process_issue(base_url, auth, issue, status_column_map=None):
         "subtasks": subtask_data,
         "linked_issues": linked_issues,
         "linked_issue_count": total_links,
+        "last_issuetype_change": last_issuetype_change,
         "collected_at": datetime.now(timezone.utc).isoformat(),
     }
 

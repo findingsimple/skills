@@ -60,6 +60,12 @@ Rules:
 - Keep per-linked-issue summaries factual and concise (2-4 sentences)
 - The root cause analysis should synthesise, not just list what the linked issues say
 
+Weighting evidence by link type:
+Each linked ticket header carries its relationship in parentheses, e.g. `(causes, Closed)` or `(relates to, Open)`. Treat link types differently:
+- **`causes`** — the strongest signal. These tickets are the underlying defects/feature gaps the root cause is meant to capture. Lean on them most heavily for both the per-linked-issue summary and the root cause analysis.
+- **`duplicates`**, **`is duplicated by`**, **`blocks`**, **`is blocked by`** — moderate signal. Include but don't let them dominate.
+- **`relates to`**, **`is related to`**, **`added to idea`**, **`tested by`**, **`mentions`** — weak signal. They often point at merely-similar root causes or product-management artefacts that may not describe the same underlying issue. Note them but don't let them shift the root cause analysis away from what the parent ticket and `causes` links actually describe. Classification should be driven by the parent ticket and `causes` evidence, not by themes that only appear in weak-link tickets.
+
 ---
 
 ## Issues to analyse

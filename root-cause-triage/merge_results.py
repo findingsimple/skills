@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge agent results from analyze mode Steps A2a, A2b, A2c.
+"""Merge agent results from analyze mode Steps A2a, A2b, A2c, A2e.
 
 Reads agent output files from /tmp/triage_prompts/, merges with the base
 analysis from /tmp/triage_analysis.json, and writes the enriched analysis.
@@ -11,6 +11,7 @@ Usage:
 Output:
     /tmp/triage_analysis_enriched.json       — merged analysis with agent assessments
     /tmp/triage_duplicates/clusters.json     — semantic duplicate clusters (from A2c)
+    /tmp/triage_type_suggestions.json        — issue type SOP suggestions (from A2e)
 
 Prints a summary of merge counts and any missing/failed batches.
 """
@@ -30,6 +31,11 @@ PROMPT_BASE = "/tmp/triage_prompts"
 ENRICHED_PATH = "/tmp/triage_analysis_enriched.json"
 DUPLICATES_DIR = "/tmp/triage_duplicates"
 ENRICH_DIR = "/tmp/triage_enrich"
+TYPE_SUGGESTIONS_PATH = "/tmp/triage_type_suggestions.json"
+
+# Allowed Jira issue types per the SOP. Used to drop hallucinated suggestions.
+SOP_ALLOWED_TYPES = {"Bug", "Documentation", "Feature Gap", "Task", "Request", "Process Gap"}
+SOP_LINK_KEY = "PDE-13499"
 
 
 def extract_json(text):
@@ -63,6 +69,30 @@ def extract_json(text):
     return None
 
 
+def _load_manifest(manifest_path):
+    """Read a batches.json manifest, normalising legacy bare-list format.
+
+    Newer manifests are `{"batches": [...], "batch_count": N}`. Pre-refactor
+    manifests were a bare list. Without this guard, reading a stale
+    /tmp/triage_prompts/<type>/batches.json from an old build_prompts run
+    would crash with `TypeError: list indices must be integers`. Re-running
+    build_prompts.py overwrites the manifest, but a clear error here saves
+    debugging time when the user hasn't.
+    """
+    with open(manifest_path) as f:
+        raw = json.load(f)
+    if isinstance(raw, list):
+        return {"batches": raw, "batch_count": len(raw)}
+    if isinstance(raw, dict) and "batches" in raw:
+        # Defensive: fill in batch_count if absent.
+        raw.setdefault("batch_count", len(raw["batches"]))
+        return raw
+    raise ValueError(
+        "Unrecognised manifest format at %s — re-run build_prompts.py to regenerate"
+        % manifest_path
+    )
+
+
 def load_batch_results(prompt_type):
     """Load results from agent output files for a given prompt type.
 
@@ -72,8 +102,7 @@ def load_batch_results(prompt_type):
     if not os.path.exists(manifest_path):
         return {}, {"loaded": 0, "missing": 0, "failed": 0, "total": 0}
 
-    with open(manifest_path) as f:
-        manifest = json.load(f)
+    manifest = _load_manifest(manifest_path)
 
     results = {}
     stats = {"loaded": 0, "missing": 0, "failed": 0, "total": manifest["batch_count"]}
@@ -194,19 +223,77 @@ def save_duplicates(dup_results):
     return dup_count, rel_count
 
 
+def save_type_suggestions(issues_by_key, type_results):
+    """Validate A2e type suggestions and write to /tmp/triage_type_suggestions.json.
+
+    - Drops items where suggested_type is null/empty AND no sop_link_suggestion.
+    - Drops suggested_type values not in SOP_ALLOWED_TYPES.
+    - Drops sop_link_suggestion values that aren't the canonical PDE-13499 key.
+    - Drops items whose key isn't in the analyzed set.
+    """
+    suggestions = []
+    invalid_type = 0
+    invalid_link = 0
+    unknown_key = 0
+
+    for key, result in type_results.items():
+        if key not in issues_by_key:
+            unknown_key += 1
+            continue
+
+        suggested = result.get("suggested_type")
+        sop_link = result.get("sop_link_suggestion")
+
+        # Normalise empty strings to None for cleaner downstream logic.
+        if suggested in ("", "null", "None"):
+            suggested = None
+        if sop_link in ("", "null", "None"):
+            sop_link = None
+
+        if suggested and suggested not in SOP_ALLOWED_TYPES:
+            invalid_type += 1
+            suggested = None
+        if sop_link and sop_link != SOP_LINK_KEY:
+            invalid_link += 1
+            sop_link = None
+
+        if not suggested and not sop_link:
+            continue  # No-op suggestion; drop from report.
+
+        suggestions.append({
+            "key": key,
+            "current_type": result.get("current_type") or issues_by_key[key].get("issue_type"),
+            "suggested_type": suggested,
+            "confidence": result.get("confidence"),
+            "rationale": result.get("rationale"),
+            "sop_link_suggestion": sop_link,
+        })
+
+    tmp_path = TYPE_SUGGESTIONS_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(suggestions, f, indent=2)
+    os.replace(tmp_path, TYPE_SUGGESTIONS_PATH)
+
+    return {
+        "saved": len(suggestions),
+        "invalid_type": invalid_type,
+        "invalid_link": invalid_link,
+        "unknown_key": unknown_key,
+    }
+
+
 def check_status():
     """Check which results are present without merging."""
     print("Agent result status:")
     print()
 
-    for prompt_type in ["raw-quality", "post-enrich-quality", "duplicates"]:
+    for prompt_type in ["raw-quality", "post-enrich-quality", "duplicates", "type-sop"]:
         manifest_path = os.path.join(PROMPT_BASE, prompt_type, "batches.json")
         if not os.path.exists(manifest_path):
             print("  %s: no manifest (build_prompts.py not run)" % prompt_type)
             continue
 
-        with open(manifest_path) as f:
-            manifest = json.load(f)
+        manifest = _load_manifest(manifest_path)
 
         present = 0
         missing = 0
@@ -293,6 +380,27 @@ def main():
     else:
         print("  No results found")
 
+    # Handle A2e — issue type SOP suggestions
+    print("\nA2e (type-sop):")
+    type_results, type_stats = load_batch_results("type-sop")
+    if type_results:
+        type_summary = save_type_suggestions(issues_by_key, type_results)
+        print("  %d batches loaded, %d valid suggestions saved" % (
+            type_stats["loaded"], type_summary["saved"]))
+        if type_summary["invalid_type"]:
+            print("  WARNING: %d suggestions dropped (type not in SOP)" % type_summary["invalid_type"])
+        if type_summary["invalid_link"]:
+            print("  WARNING: %d sop_link_suggestion values dropped (not %s)" % (
+                type_summary["invalid_link"], SOP_LINK_KEY))
+        if type_summary["unknown_key"]:
+            print("  WARNING: %d suggestions dropped (key not in analyzed set)" % type_summary["unknown_key"])
+        if type_stats["missing"]:
+            print("  WARNING: %d batches missing" % type_stats["missing"])
+        if type_stats["failed"]:
+            print("  WARNING: %d batches failed to parse" % type_stats["failed"])
+    else:
+        print("  No results found")
+
     # Save enriched analysis
     tmp_path = ENRICHED_PATH + ".tmp"
     with open(tmp_path, "w") as f:
@@ -310,13 +418,24 @@ def main():
                    if i.get("quality") in ("thin", "vague")
                    and i.get("post_enrich_quality") == "good")
 
+    type_count = 0
+    if os.path.exists(TYPE_SUGGESTIONS_PATH):
+        try:
+            with open(TYPE_SUGGESTIONS_PATH) as f:
+                type_count = len(json.load(f))
+        except (json.JSONDecodeError, OSError):
+            type_count = 0
+
     print("\n" + "=" * 50)
     print("MERGE SUMMARY")
     print("=" * 50)
     print("Raw quality:      %d good, %d thin, %d vague" % (raw_good, raw_thin, raw_vague))
     print("Post-enrichment:  %d good, %d thin, %d vague" % (post_good, post_thin, post_vague))
     print("Upgrades:         %d issues vague/thin → good" % upgrades)
+    print("Type SOP flags:   %d issues with suggested type change or PDE-13499 link" % type_count)
     print("\nSaved to %s" % ENRICHED_PATH)
+    if type_count:
+        print("Type suggestions saved to %s" % TYPE_SUGGESTIONS_PATH)
 
 
 if __name__ == "__main__":

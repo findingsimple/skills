@@ -14,6 +14,12 @@ import re
 import sys
 
 import _libpath  # noqa: F401
+from batch_results import (
+    PROMPT_FOOTER,
+    existing_result_keys,
+    load_results,
+    materialize_per_key_cache,
+)
 from jira_client import load_env, ensure_tmp_dir
 
 
@@ -100,16 +106,17 @@ def cmd_prepare(args):
     else:
         json_files = sorted(glob.glob(os.path.join(COLLECT_DIR, "*.json")))
 
-    # Build issue blocks, skipping those without linked descriptions
+    # Build issue blocks, skipping those without linked descriptions.
+    # An issue is considered already-enriched if EITHER the legacy per-key
+    # result file exists OR its key appears in any per-batch results file.
+    enriched_keys = existing_result_keys(ENRICH_DIR)
     blocks = []
     for jf in json_files:
         with open(jf) as f:
             data = json.load(f)
         key = data["key"]
 
-        # Skip if already enriched (unless --force)
-        result_path = os.path.join(ENRICH_DIR, "result_%s.json" % key)
-        if not args.force and os.path.exists(result_path):
+        if not args.force and key in enriched_keys:
             continue
 
         block = build_issue_block(data)
@@ -126,22 +133,30 @@ def cmd_prepare(args):
     batches = []
     for i in range(0, len(blocks), batch_size):
         batch = blocks[i:i + batch_size]
-        batch_num = len(batches) + 1
+        batch_num = i // batch_size  # 0-indexed to match build_prompts.py
         keys = [b["key"] for b in batch]
 
-        prompt = template + "\n".join(b["block"] for b in batch)
-        prompt_path = os.path.join(ENRICH_DIR, "batch_%03d.txt" % batch_num)
+        prompt_path = os.path.join(ENRICH_DIR, "batch_%d.txt" % batch_num)
+        output_path = os.path.join(ENRICH_DIR, "results_batch_%d.json" % batch_num)
+
+        prompt = template + "\n".join(b["block"] for b in batch) + PROMPT_FOOTER.format(output_path=output_path)
         with open(prompt_path, "w") as f:
             f.write(prompt)
 
-        meta = {"batch": batch_num, "keys": keys, "prompt_path": prompt_path}
-        batches.append(meta)
+        batches.append({
+            "batch_num": batch_num,
+            "batch_file": prompt_path,
+            "output_file": output_path,
+            "issue_count": len(batch),
+            "keys": keys,
+        })
 
-    # Write batch index
+    # Write manifest matching the build_prompts.py shape
+    manifest = {"type": "enrich", "batch_count": len(batches), "batches": batches}
     index_path = os.path.join(ENRICH_DIR, "batches.json")
     tmp_path = index_path + ".tmp"
     with open(tmp_path, "w") as f:
-        json.dump(batches, f, indent=2)
+        json.dump(manifest, f, indent=2)
     os.replace(tmp_path, index_path)
 
     print("--- Prepare Complete ---")
@@ -152,6 +167,8 @@ def cmd_prepare(args):
     print("\nReady for agent enrichment step.")
 
 
+
+
 def cmd_apply(args):
     """Apply agent results back to Obsidian Markdown files."""
     env = load_env(ENV_KEYS)
@@ -159,18 +176,17 @@ def cmd_apply(args):
     output_path = env["TRIAGE_OUTPUT_PATH"]
     issues_dir = os.path.join(output_path, "Issues")
 
-    # Load all result files
-    result_files = sorted(glob.glob(os.path.join(ENRICH_DIR, "result_*.json")))
-    if not result_files:
+    # Load all result files (per-batch results_batch_*.json + legacy result_KEY.json)
+    results = load_results(ENRICH_DIR)
+    if not results:
         print("No enrichment results found in %s/" % ENRICH_DIR)
         print("Run the agent enrichment step first.")
         sys.exit(1)
 
-    results = {}
-    for rf in result_files:
-        with open(rf) as f:
-            data = json.load(f)
-        results[data["key"]] = data
+    # Materialize per-key cache files for downstream consumers
+    # (merge_results.py, autofill.py, build_prompts.py all read result_{KEY}.json).
+    if not args.dry_run:
+        materialize_per_key_cache(ENRICH_DIR, results)
 
     if args.issue:
         if args.issue not in results:

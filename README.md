@@ -229,9 +229,9 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 Two modes for working with root cause tickets on a Jira board:
 
-**Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, then uses agents to produce quality linked issue summaries and a root cause analysis synthesis. Per-issue files include `tags: [root-cause]` frontmatter (plus classification tag after enrichment) for Obsidian graph clustering:
+**Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, uses agents to produce quality linked issue summaries plus a root cause analysis synthesis, then auto-fills missing template sections (Background / Steps / Actual / Expected / Analysis) for issues scoring 0/5. Per-issue files include `tags: [root-cause]` frontmatter (plus classification tag after enrichment) for Obsidian graph clustering:
 ```bash
-/root-cause-triage collect                    # full pipeline: fetch, summarize, enrich
+/root-cause-triage collect                    # full pipeline: fetch, summarize, enrich, autofill
 /root-cause-triage collect --issue PROJ-1234  # collect a single issue
 /root-cause-triage collect --status "To Triage" # filter by status
 /root-cause-triage collect --dry-run          # preview without writing
@@ -240,15 +240,16 @@ Two modes for working with root cause tickets on a Jira board:
 /root-cause-triage collect --index-only      # regenerate _Index.md from cache (no Jira fetch)
 ```
 
-**Analyze** — run structural and semantic analysis on collected data (informational, no Jira mutations):
+**Analyze** — run structural and semantic analysis on collected data (informational, no Jira mutations). Includes raw + post-enrichment quality assessment, semantic duplicate detection, and an issue-type SOP check that flags tickets whose Jira issue type doesn't match the SOP (Bug / Documentation / Feature Gap / Task / Request / Process Gap):
 ```bash
-/root-cause-triage analyze                    # analyze "To Triage" issues
-/root-cause-triage analyze --all-statuses     # analyze everything
+/root-cause-triage analyze                    # analyze all statuses (default)
+/root-cause-triage analyze --status "To Triage" # filter by status
 /root-cause-triage analyze --issue PROJ-1234  # analyze a single issue
 ```
 
 **Prerequisites:**
 - `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` in `~/.zshrc`
+- Optional: `TRUSTED_TYPE_REVIEWERS` (comma-separated Jira display names) — type-sop check skips tickets whose most recent `issuetype` change was made by a trusted reviewer
 
 ### sprint-pulse
 

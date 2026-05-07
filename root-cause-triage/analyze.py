@@ -564,6 +564,7 @@ def main():
             "resolution_detail": resolution_info["resolution_detail"],
             "resolution_outline": resolution_info["resolution_outline"],
             "dev_links": resolution_info["dev_links"],
+            "last_issuetype_change": issue.get("last_issuetype_change"),
         })
 
     # Output summary table to stdout

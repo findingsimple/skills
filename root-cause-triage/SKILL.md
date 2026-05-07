@@ -14,6 +14,8 @@ Two modes for working with root cause tickets under the triage board:
 
 Uses `TRIAGE_BOARD_ID`, `TRIAGE_PARENT_ISSUE_KEY`, and `TRIAGE_OUTPUT_PATH` environment variables.
 
+> **Output path scope:** `TRIAGE_OUTPUT_PATH` must point to a cross-team location (e.g., `…/Obsidian/HappyCo/Root Cause Triage`), not a per-team folder like `…/Teams/<TeamName>/`. Root causes are cross-team artifacts. When echoing the path in Step 1, read the env var directly — never invent a team-scoped default.
+
 ### Argument allow-lists (`collect.py`, `analyze.py`)
 
 For JQL-injection safety, the following inputs are validated against strict allow-lists before interpolation:
@@ -49,6 +51,7 @@ TO TRIAGE → MORE INFO REQUIRED → READY FOR DEVELOPMENT → IN PROGRESS → R
 | `QUALITY_PROMPT.md` | Agent prompt reference for raw quality assessment (Step A2a) — embedded in `build_prompts.py` |
 | `POST_ENRICH_QUALITY_PROMPT.md` | Agent prompt reference for post-enrichment quality assessment (Step A2b) — embedded in `build_prompts.py` |
 | `DUPLICATE_PROMPT.md` | Agent prompt reference for semantic duplicate detection (Step A2c) — embedded in `build_prompts.py` |
+| `TYPE_SOP_PROMPT.md` | Agent prompt for issue type SOP check (Step A2e) — loaded by `build_prompts.py` at runtime |
 
 ## Instructions
 
@@ -77,6 +80,8 @@ Build a per-issue Obsidian knowledge base from Jira data. Four steps:
 2. `summarize.py` reads the JSON files, generates Obsidian Markdown with extractive summaries
 3. `enrich.py` + agent calls produce quality linked issue summaries and a root cause analysis synthesis
 4. `autofill.py` + agent calls auto-fill missing template sections for 0/5 issues using enrichment + linked issue evidence
+
+> **Upgrade note (May 2026):** Earlier versions of `enrich.py` / `autofill.py` produced batch prompts named `batch_NNN.txt` (3-digit, 1-indexed) and didn't include a "write JSON to file" footer. The current scripts use `batch_N.txt` (0-indexed) and embed the output-file footer. Stale `batch_NNN.txt` files in `/tmp/triage_enrich/` or `/tmp/triage_autofill/` from old runs are inert — `prepare` reads `batches.json` (which only references the new filenames) so leftover files are ignored. Safe to leave or `find /tmp/triage_enrich -type f -delete && find /tmp/triage_enrich -type d -empty -delete` if a clean slate is preferred.
 
 ### Step C1 — Run collect.py
 
@@ -130,14 +135,13 @@ If no issues need enrichment, stop here.
 
 **C3b — Run agent batches:**
 
-Read `/tmp/triage_enrich/batches.json` to get the list of batches. For each batch:
+Read `/tmp/triage_enrich/batches.json` to get the list of batches (batch numbers are 0-indexed; files are `batch_0.txt`, `batch_1.txt`, …). For each batch, spawn a `general-purpose` agent using **model: sonnet** with the prompt:
 
-1. Spawn a `general-purpose` agent using **model: sonnet** with the prompt: "Use the Bash tool to run: cat /tmp/triage_enrich/batch_NNN.txt — Then follow the instructions in the file exactly. Return ONLY the JSON response as specified in the prompt."
-   > **Note:** Agents cannot use the Read tool on `/tmp/` paths due to sandbox permissions. Always instruct agents to use `cat` via the Bash tool to read batch files.
-2. Parse the agent's JSON response — if not valid JSON, strip markdown fences and retry parsing
-3. For each issue in the response, save to `/tmp/triage_enrich/result_{KEY}.json`
+> "Use the Bash tool to run: `cat {batch_file}` — Then follow the instructions in the file exactly."
 
-Run up to 3 agent batches concurrently to balance speed with reliability. If a batch fails to parse, log the raw response to `/tmp/triage_enrich/failed_batch_{N}.txt` and continue with remaining batches.
+> **Note:** Agents cannot use the Read tool on `/tmp/` paths due to sandbox permissions. Always instruct agents to use `cat` via the Bash tool to read batch files.
+
+Each batch prompt instructs the agent to write its JSON result array to `/tmp/triage_enrich/results_batch_N.json`. The orchestrator does not need to parse or save the response — the apply step in C3c reads these files directly. If a batch fails to write its output file, re-spawn that batch.
 
 **C3c — Apply results:**
 
@@ -160,6 +164,8 @@ Enrichment complete:
 
 ### Step C4 — Template section autofill
 
+> **Run this by default.** Skipping autofill cripples the post-enrichment quality assessment. Empirical comparison from May 2026: with autofill, ~96 of 114 issues moved to "good" quality post-enrichment; without autofill, only ~9. The marginal cost (one sonnet agent batch per ~10 issues) is small relative to the analysis lift. Only skip if `--dry-run` was specified in Step 1.
+
 This step auto-fills the 5 template sections (Background Context, Steps to reproduce, Actual Results, Expected Results, Analysis) for issues that score 0/5. It uses enrichment data + linked issue evidence to synthesise section content with per-section confidence levels (high/medium/low).
 
 If `--dry-run` was specified in Step 1, skip this step.
@@ -176,13 +182,11 @@ If no issues need autofill, stop here.
 
 **C4b — Run agent batches:**
 
-Read `/tmp/triage_autofill/batches.json` to get the list of batches. For each batch:
+Read `/tmp/triage_autofill/batches.json` to get the list of batches (batch numbers are 0-indexed; files are `batch_0.txt`, `batch_1.txt`, …). For each batch, spawn a `general-purpose` agent using **model: sonnet** with the prompt:
 
-1. Spawn a `general-purpose` agent using **model: sonnet** with the prompt: "Use the Bash tool to run: cat /tmp/triage_autofill/batch_NNN.txt — Then follow the instructions in the file exactly. Return ONLY the JSON response as specified in the prompt."
-2. Parse the agent's JSON response — if not valid JSON, strip markdown fences and retry parsing
-3. For each issue in the response, save to `/tmp/triage_autofill/result_{KEY}.json`
+> "Use the Bash tool to run: `cat {batch_file}` — Then follow the instructions in the file exactly."
 
-Run up to 3 agent batches concurrently. If a batch fails to parse, log the raw response to `/tmp/triage_autofill/failed_batch_{N}.txt` and continue.
+Each batch prompt instructs the agent to write its JSON result array to `/tmp/triage_autofill/results_batch_N.json`. The orchestrator does not need to parse or save the response — the apply step in C4c reads these files directly. If a batch fails to write its output file, re-spawn that batch.
 
 **C4c — Apply results:**
 
@@ -223,10 +227,11 @@ If `analyze.py` exits with a non-zero status, display the error and stop.
 python3 ~/.claude/skills/root-cause-triage/build_prompts.py all [--batch-size 10]
 ```
 
-This builds all three prompt types from `/tmp/triage_analysis.json`:
+This builds all four prompt types from `/tmp/triage_analysis.json`:
 - **raw-quality** (A2a) — assesses ticket quality based on raw Jira descriptions only
 - **post-enrich-quality** (A2b) — assesses quality using combined evidence (raw + enrichment + autofill)
 - **duplicates** (A2c) — semantic duplicate detection using enriched root cause analyses
+- **type-sop** (A2e) — validates issue type against SOP (Bug, Documentation, Feature Gap, Task, Request, Process Gap) and suggests corrections
 
 Output: `/tmp/triage_prompts/{type}/batch_N.txt` + `batches.json` manifest per type.
 
@@ -258,6 +263,39 @@ The agent identifies two types of clusters:
 - **`duplicate`** — issues describing the same root cause; one is primary, others are duplicates
 - **`related`** — issues sharing a theme but needing separate implementations (useful for prioritisation)
 
+### Trusted reviewer skip (optional, env var)
+
+If `TRUSTED_TYPE_REVIEWERS` is set, the type-sop step skips any issue whose **most recent** Jira `issuetype` change was made by a name in that list. The intent: if a senior reviewer (e.g., a manager) has already adjusted or confirmed the type on a ticket, don't ask the agent to second-guess them.
+
+Configure as a comma-separated list of Jira display names in `~/.zshrc`:
+
+```bash
+export TRUSTED_TYPE_REVIEWERS="Dan Eldridge,Joel Small"
+```
+
+Names are matched case-sensitively against the `author` field returned by Jira's changelog API (which is the user's display name, not their username). Match must be exact.
+
+The skip relies on `last_issuetype_change` being present on the per-issue JSON, which is populated by `collect.py` via the changelog API. After upgrading the skill, re-run `/root-cause-triage collect --force` (or wait for new issues to be picked up) so the field is populated. Issues collected before the upgrade will have `last_issuetype_change == None` and are NOT skipped — the agent gets to suggest as normal.
+
+### Step A2e — Spawn issue type SOP check agents
+
+Read `/tmp/triage_prompts/type-sop/batches.json`. For each batch, spawn a `general-purpose` agent using **model: sonnet** with:
+
+> "Use the Bash tool to run: `cat {batch_file}` — Then follow the instructions in the file exactly."
+
+> **Note:** Agents cannot use the Read tool on `/tmp/` paths due to sandbox permissions. Always instruct agents to use `cat` via the Bash tool to read batch files.
+
+Launch all batches concurrently with the other A2 agents. The check is lightweight per ticket (current type + classification + short rationale), so sonnet is sufficient.
+
+The agent emits one JSON object per ticket:
+- `current_type` — Jira issue type at the time of analysis
+- `suggested_type` — one of Bug, Documentation, Feature Gap, Task, Request, Process Gap, or null when current matches SOP
+- `confidence` — high / medium / low
+- `rationale` — one-sentence reason grounded in the ticket content
+- `sop_link_suggestion` — `"PDE-13499"` if the ticket reads as a "no root cause gap — SOP adherence miss", otherwise null
+
+`merge_results.py` validates each suggestion against the allowed type set (Bug / Documentation / Feature Gap / Task / Request / Process Gap) and drops anything outside it.
+
 ### Step A2d — Merge agent results
 
 Once all agents have completed:
@@ -266,7 +304,7 @@ Once all agents have completed:
 python3 ~/.claude/skills/root-cause-triage/merge_results.py
 ```
 
-This collects agent output files from `/tmp/triage_prompts/`, merges A2a/A2b results into `/tmp/triage_analysis_enriched.json`, and saves A2c duplicate clusters to `/tmp/triage_duplicates/clusters.json`.
+This collects agent output files from `/tmp/triage_prompts/`, merges A2a/A2b results into `/tmp/triage_analysis_enriched.json`, saves A2c duplicate clusters to `/tmp/triage_duplicates/clusters.json`, and writes validated A2e suggestions to `/tmp/triage_type_suggestions.json`.
 
 To check which results are present before merging:
 
@@ -302,5 +340,6 @@ Show a consolidated summary referencing both reports. Highlight:
 - Top issues from each report's Top 10 list
 - Issues where structural analysis says "ready" but agent says "thin" or "vague" (disagreement)
 - Issues with many linked support tickets (signal of real user impact)
+- Issue type SOP mismatches (count from the "Issue Type SOP Check" section — user retypes manually in Jira)
 
 This is informational — the user reviews the reports in Obsidian and decides next steps.
