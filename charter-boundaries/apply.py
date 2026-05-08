@@ -112,6 +112,34 @@ def _validate_cluster(rec, allowed_teams, valid_evidence, valid_curated, team):
     }
 
 
+def _curated_examples_for(team_record):
+    """Carry the bundle's curated examples through to draft.json so the
+    renderer can surface them as inbound drift ("Should own — frequently
+    mis-routed away from us"). Each example is the team's user-curated
+    ground truth that a ticket landed at another team but belongs here.
+
+    Filters to keys + from/to teams that already passed regex validation
+    upstream (parse_inputs.py + build_prompt.py). The url and raw fields
+    are not carried — they're user-authored Markdown shipped untrusted to
+    the synthesis sub-agent and would need re-wrapping for safe render.
+    The ticket_key alone is enough for the renderer to build a Jira link."""
+    out = []
+    for ex in team_record.get("curated_examples") or []:
+        key = (ex.get("ticket_key") or "").strip()
+        if not _KEY_RE.match(key):
+            continue
+        from_team = (ex.get("from_team") or "").strip()
+        to_team = (ex.get("to_team") or "").strip()
+        if not from_team or not to_team:
+            continue
+        out.append({
+            "ticket_key": key,
+            "from_team": from_team,
+            "to_team": to_team,
+        })
+    return out
+
+
 def _validate_edge_cases(raw):
     out = []
     for rec in (raw or []):
@@ -184,6 +212,7 @@ def main():
             "owns_seed": owns_seed,
             "boundary_rules_seed": boundary_rules_seed,
             "does_not_own_clusters": clusters,
+            "should_own_examples": _curated_examples_for(tr),
             "edge_cases_seed": edge_cases,
         })
 
@@ -200,6 +229,7 @@ def main():
             "owns_seed": [],
             "boundary_rules_seed": [],
             "does_not_own_clusters": [],
+            "should_own_examples": _curated_examples_for(tr),
             "edge_cases_seed": [],
         })
 
@@ -214,9 +244,10 @@ def main():
 
     print("=== DRAFT ===")
     for t in teams_out:
-        print("  %-15s  owns=%2d  boundary_rules=%d  clusters=%d  edge_cases=%d" % (
-            t["team"], len(t["owns_seed"]), len(t["boundary_rules_seed"]),
-            len(t["does_not_own_clusters"]), len(t["edge_cases_seed"])))
+        print("  %-15s  owns=%2d  should_own=%d  clusters=%d  rules=%d  edge=%d" % (
+            t["team"], len(t["owns_seed"]), len(t["should_own_examples"]),
+            len(t["does_not_own_clusters"]), len(t["boundary_rules_seed"]),
+            len(t["edge_cases_seed"])))
     print("\nDraft saved to %s" % DRAFT_PATH)
 
 

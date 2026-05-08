@@ -14,12 +14,13 @@ allowed-tools: Bash Read Agent
 
 # Charter Boundaries
 
-Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with four sections:
+Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with five sections:
 
 1. **Owns** — concrete ownership items extracted from the existing charter blurb.
-2. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme.
-3. **Boundary rules** — if/then language already in the charter (most teams have none).
-4. **Edge case registry** — empty placeholder for the team to populate over time.
+2. **Should own (frequently mis-routed away)** — tickets that landed at another team but belong here, sourced from the user's curated `examples.md`. This is the *inbound* drift counterpart to "Does not own".
+3. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme. *Outbound* drift.
+4. **Boundary rules** — if/then language already in the charter (most teams have none).
+5. **Edge case registry** — empty placeholder for the team to populate over time.
 
 Outputs go to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Charter Clarification/{end_year}/Charter Boundaries — {team} — {YYYY-MM-DD}.md` for every team that has a `SPRINT_TEAMS` slot.
 
@@ -170,8 +171,18 @@ Each per-team draft contains:
 
 - YAML frontmatter (`team: "[[X]]"`, `period_start`, `period_end`, `generated_at`, `charters_source`, `examples_source`, `tags: [charter, draft]`).
 - `## Owns` — bulleted list seeded from the charter blurb.
+- `## Should own (frequently mis-routed away)` — tickets from the user's curated `examples.md` where `to_team == this team`, grouped by `from_team`, rendered as Jira links. Empty for teams with no inbound-drift examples; an empty-state hint tells the user how to add new examples.
 - `## Does not own (common mistakes)` — one section per cluster, each with description, boundary rule, and `**Evidence:**` line linking to Jira tickets.
 - `## Boundary rules` — bulleted list (often empty initially).
 - `## Edge case registry` — placeholder table for the team to fill in.
 
-The team owner is expected to review and refine each section. The "Does not own" clusters are the data-grounded part — the rest is scaffolding.
+The team owner is expected to review and refine each section. The "Does not own" clusters and "Should own" examples are the data-grounded parts — the rest is scaffolding.
+
+### Inbound vs outbound drift
+
+The skill captures two distinct drift directions:
+
+- **Outbound** — tickets that landed at this team but belong elsewhere. Sourced from the routing-audit pipeline (audits the team's intake, sub-agent verdicts → clusters). Lives in *Does not own (common mistakes)*.
+- **Inbound** — tickets that landed at another team but belong here. Sourced from the user's hand-curated `examples.md`. Lives in *Should own (frequently mis-routed away)*.
+
+The audit pipeline only sees teams with `SPRINT_TEAMS` slots, so it can't auto-detect inbound drift today (see *Out of scope* below). Curated examples close the gap — when L2 reroutes a ticket, add a line to `examples.md` and the next run picks it up.

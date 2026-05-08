@@ -5,6 +5,7 @@ import unittest
 
 import _libpath  # noqa: F401
 from apply import (
+    _curated_examples_for,
     _smart_truncate,
     _string_list,
     _validate_cluster,
@@ -109,6 +110,53 @@ class ValidateClusterTests(unittest.TestCase):
         self.assertIsNotNone(v)
         self.assertTrue(v["description"].endswith("…"))
         self.assertLessEqual(len(v["description"]), 200)
+
+
+class CuratedExamplesForTests(unittest.TestCase):
+    """Pin the inbound-drift carry-through: bundle.curated_examples should
+    arrive in draft.json as should_own_examples with regex-validated keys."""
+
+    def test_carries_valid_examples(self):
+        tr = {
+            "curated_examples": [
+                {"ticket_key": "ECS-5354", "from_team": "Asset", "to_team": "ACE",
+                 "url": {"_untrusted": True, "text": "https://..."},
+                 "raw": {"_untrusted": True, "text": "Assigned to Asset..."}},
+                {"ticket_key": "ECS-5330", "from_team": "Asset", "to_team": "ACE",
+                 "url": {"_untrusted": True, "text": "https://..."},
+                 "raw": {"_untrusted": True, "text": "Assigned to Asset..."}},
+            ],
+        }
+        out = _curated_examples_for(tr)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["ticket_key"], "ECS-5354")
+        self.assertEqual(out[0]["from_team"], "Asset")
+        self.assertEqual(out[0]["to_team"], "ACE")
+        # url and raw are NOT carried through — they're untrusted-wrapped
+        # Markdown the renderer doesn't need.
+        self.assertNotIn("url", out[0])
+        self.assertNotIn("raw", out[0])
+
+    def test_drops_invalid_ticket_key(self):
+        tr = {"curated_examples": [
+            {"ticket_key": "not-a-key", "from_team": "Asset", "to_team": "ACE"},
+            {"ticket_key": "ECS-1", "from_team": "Asset", "to_team": "ACE"},
+        ]}
+        out = _curated_examples_for(tr)
+        self.assertEqual([e["ticket_key"] for e in out], ["ECS-1"])
+
+    def test_drops_missing_from_or_to(self):
+        tr = {"curated_examples": [
+            {"ticket_key": "ECS-1", "from_team": "", "to_team": "ACE"},
+            {"ticket_key": "ECS-2", "from_team": "Asset", "to_team": ""},
+            {"ticket_key": "ECS-3", "from_team": "Asset", "to_team": "ACE"},
+        ]}
+        out = _curated_examples_for(tr)
+        self.assertEqual([e["ticket_key"] for e in out], ["ECS-3"])
+
+    def test_empty_input(self):
+        self.assertEqual(_curated_examples_for({}), [])
+        self.assertEqual(_curated_examples_for({"curated_examples": []}), [])
 
 
 class ValidateEdgeCasesTests(unittest.TestCase):

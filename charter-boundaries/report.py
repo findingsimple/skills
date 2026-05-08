@@ -60,6 +60,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     owns = team_record.get("owns_seed") or []
     rules = team_record.get("boundary_rules_seed") or []
     clusters = team_record.get("does_not_own_clusters") or []
+    should_own = team_record.get("should_own_examples") or []
     edge_cases = team_record.get("edge_cases_seed") or []
 
     lines = []
@@ -77,7 +78,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     lines.append("")
     lines.append("# Charter Boundaries — %s (DRAFT)" % team)
     lines.append("")
-    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Does not own (common mistakes)** is populated from routing-audit evidence over the period above. Review and edit each section in place.")
+    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Should own (frequently mis-routed away)** comes from curated `examples.md` (inbound drift). **Does not own (common mistakes)** is populated from routing-audit evidence over the period above (outbound drift). Review and edit each section in place.")
     lines.append("")
 
     # Owns
@@ -91,6 +92,27 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     else:
         lines.append("_No items seeded from the charter for %s. Add the team's owned features here._" % team)
     lines.append("")
+
+    # Should own (frequently mis-routed away)
+    lines.append("## Should own (frequently mis-routed away)")
+    lines.append("")
+    if should_own:
+        lines.append("> Tickets that landed at another team but belong to %s. Sourced from your curated `examples.md`. Use these to write boundary rules and update L2 routing guidance." % team)
+        lines.append("")
+        # Group by from_team — usually the same team for several examples.
+        by_from = {}
+        for ex in should_own:
+            by_from.setdefault(ex["from_team"], []).append(ex)
+        for from_team in sorted(by_from):
+            examples = by_from[from_team]
+            lines.append("### From %s" % from_team)
+            lines.append("")
+            links = ", ".join(_key_link(ex["ticket_key"], base_url) for ex in examples)
+            lines.append("**Tickets:** %s" % links)
+            lines.append("")
+    else:
+        lines.append("_No curated mis-allocation examples target %s in `examples.md` yet. When you re-route a ticket that should have come here, add a line like `Assigned to <X>, but should belong to %s (we rerouted): <URL>` and re-run the skill._" % (team, team))
+        lines.append("")
 
     # Does not own
     lines.append("## Does not own (common mistakes)")
