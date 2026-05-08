@@ -1,15 +1,32 @@
 #!/usr/bin/env python3
 """Two-stage fetch for support-routing-audit:
 
-  Stage 1 — JQL net (broad but cheap): every ticket currently OR previously
-  assigned to the focus team's label or Team-field UUID, in the period window.
+  Stage 1 — JQL net (broad but cheap): tickets currently assigned to the
+  focus team's label or Team-field UUID, in the period window.
 
-  Stage 2 — per-ticket changelog filter: keep only tickets where the focus team
-  appears in the Team field history (or current value). Drops false positives
-  where the per-team label was applied but the Team field never resolved.
+  Stage 2 — per-ticket changelog filter: keep only tickets where the focus
+  team appears in the Team field history (or current value). Drops false
+  positives where the per-team label was applied but the Team field never
+  resolved.
 
 Persists the kept ticket set + changelog + comments to
 `/tmp/support-routing-audit/data.json`.
+
+KNOWN LIMITATION (warm hand-off blind spot):
+  Stage 1 uses current-value predicates (`labels = X`, `cf[10600] = X`)
+  because Atlassian's Team custom-field type does NOT support JQL's `was`
+  / `CHANGED` history operators on this Jira Cloud tenant (probed empirically
+  May 2026). Once a ticket is reassigned away from the focus team, its
+  cf[10600] now points at the new team and Stage 1 misses it entirely.
+  Stage 2's changelog inspection only validates candidates Stage 1 already
+  caught — it can't widen the net.
+
+  Workarounds when this matters:
+   - Manually add the handed-off ticket to charter-boundaries/.scratch/examples.md
+     so it surfaces in the "Should own" section of that team's draft.
+   - Or re-design Stage 1 as a broad `updated in window` query and rely on
+     Stage 2's changelog inspection to filter — heavier (3–10× more
+     enrichment calls) but does catch warm hand-offs.
 """
 
 import argparse
@@ -117,8 +134,17 @@ def resolve_team_uuids(base_url, auth, project_key, focus_team_field_values, foc
 
 
 def build_focus_clause(focus_labels, focus_uuids):
-    """Build the Stage 1 OR clause. Falls back to label-only if no UUIDs
-    resolved, or UUID-only if no labels. Aborts if neither."""
+    """Build the Stage 1 OR clause. Uses current-value match (`=` / `in`) on
+    both `labels` and `cf[10600]`.
+
+    Known limitation: warm hand-offs OUT of the focus team are missed.
+    Atlassian's Team-field type (cf[10600] here) does not support the JQL
+    history operator (`was` / `CHANGED`), so once a routing change swaps
+    the value, the ticket falls out of this query. See the docstring at the
+    top of fetch.py for the broader-net approach.
+
+    Falls back to label-only if no UUIDs resolved, or UUID-only if no
+    labels. Aborts if neither."""
     parts = []
     if focus_labels:
         if len(focus_labels) == 1:
