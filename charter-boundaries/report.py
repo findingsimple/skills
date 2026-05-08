@@ -61,6 +61,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     rules = team_record.get("boundary_rules_seed") or []
     clusters = team_record.get("does_not_own_clusters") or []
     should_own = team_record.get("should_own_examples") or []
+    disputes = team_record.get("boundary_disputes") or []
     edge_cases = team_record.get("edge_cases_seed") or []
 
     lines = []
@@ -78,7 +79,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     lines.append("")
     lines.append("# Charter Boundaries — %s (DRAFT)" % team)
     lines.append("")
-    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Should own (frequently mis-routed away)** comes from curated `examples.md` (inbound drift). **Does not own (common mistakes)** is populated from routing-audit evidence over the period above (outbound drift). Review and edit each section in place.")
+    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Should own (frequently mis-routed away)** comes from curated `examples.md` (inbound drift). **Does not own (common mistakes)** is populated from routing-audit evidence over the period above (outbound drift, clean misroutes). **Boundary disputes** lists `split_charter` cases — tickets to discuss with other teams. Review and edit each section in place.")
     lines.append("")
 
     # Owns
@@ -142,6 +143,35 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
                 lines.append("")
     else:
         lines.append("_No misroute clusters for %s in this window. This means either no out-of-charter tickets landed here, or the audit window was too short to see patterns._" % team)
+        lines.append("")
+
+    # Boundary disputes — split_charter cases needing other-team input
+    lines.append("## Boundary disputes")
+    lines.append("")
+    if disputes:
+        lines.append("> Tickets the routing audit flagged as `split_charter` — work that touches both %s and another team's charter. Take this list to the candidate team's standup or PM to clarify ownership; agreed calls belong in the *Edge case registry* below." % team)
+        lines.append("")
+        # Group by candidate team — one section per team to ask.
+        by_candidate = {}
+        for d in disputes:
+            by_candidate.setdefault(d["candidate_team"], []).append(d)
+        # Sort candidate teams by dispute count descending; within each, sort by priority.
+        for candidate in sorted(by_candidate, key=lambda c: -len(by_candidate[c])):
+            entries = by_candidate[candidate]
+            lines.append("### Candidate: %s (%d ticket%s)" % (
+                candidate, len(entries), "" if len(entries) == 1 else "s"))
+            lines.append("")
+            for d in entries:
+                link = _key_link(d["key"], base_url)
+                summary = d.get("summary", "")
+                reasoning = d.get("reasoning", "")
+                priority = d.get("priority", "")
+                priority_str = " *(%s)*" % priority if priority else ""
+                # One ticket per bullet: link — summary — reasoning.
+                lines.append("- %s%s — *%s* — %s" % (link, priority_str, summary, reasoning))
+            lines.append("")
+    else:
+        lines.append("_No `split_charter` cases flagged for %s in this window. The audit didn't find tickets ambiguously straddling charters with another team — either the work was clean, or the audit window was short._" % team)
         lines.append("")
 
     # Boundary rules

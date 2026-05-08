@@ -5,6 +5,7 @@ import unittest
 
 import _libpath  # noqa: F401
 from apply import (
+    _boundary_disputes_for,
     _curated_examples_for,
     _smart_truncate,
     _string_list,
@@ -157,6 +158,65 @@ class CuratedExamplesForTests(unittest.TestCase):
     def test_empty_input(self):
         self.assertEqual(_curated_examples_for({}), [])
         self.assertEqual(_curated_examples_for({"curated_examples": []}), [])
+
+
+class BoundaryDisputesForTests(unittest.TestCase):
+    """Pin the apply-side validation: split_charter cases land in
+    draft.json with regex-validated keys, allow-listed candidate team,
+    unwrapped + truncated free-text."""
+
+    def setUp(self):
+        self.allowed = {"ACE", "Asset", "Echo", "PAPI"}
+
+    def _bundle_dispute(self, **overrides):
+        base = {
+            "key": "ECS-5269",
+            "candidate_team": "Asset",
+            "confidence": "medium",
+            "summary": {"_untrusted": True, "text": "Unable to see Inspections"},
+            "reasoning": {"_untrusted": True, "text": "Asset owns inspections; ACE owns provisioning."},
+            "current_team": "ACE",
+            "priority": "High",
+            "status": "Open",
+        }
+        base.update(overrides)
+        return base
+
+    def test_carries_valid_dispute(self):
+        tr = {"boundary_disputes": [self._bundle_dispute()]}
+        out = _boundary_disputes_for(tr, self.allowed, "ACE")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["key"], "ECS-5269")
+        self.assertEqual(out[0]["candidate_team"], "Asset")
+        # Free-text unwrapped from {_untrusted, text}.
+        self.assertEqual(out[0]["summary"], "Unable to see Inspections")
+        self.assertIn("Asset owns inspections", out[0]["reasoning"])
+
+    def test_drops_invalid_ticket_key(self):
+        tr = {"boundary_disputes": [self._bundle_dispute(key="not-a-key")]}
+        self.assertEqual(_boundary_disputes_for(tr, self.allowed, "ACE"), [])
+
+    def test_drops_unknown_candidate(self):
+        tr = {"boundary_disputes": [self._bundle_dispute(candidate_team="Bogus")]}
+        self.assertEqual(_boundary_disputes_for(tr, self.allowed, "ACE"), [])
+
+    def test_drops_self_candidate(self):
+        # If somehow a focus-team candidate slipped past build_prompt.py,
+        # apply.py rejects it too.
+        tr = {"boundary_disputes": [self._bundle_dispute(candidate_team="ACE")]}
+        self.assertEqual(_boundary_disputes_for(tr, self.allowed, "ACE"), [])
+
+    def test_drops_low_confidence(self):
+        tr = {"boundary_disputes": [self._bundle_dispute(confidence="low")]}
+        self.assertEqual(_boundary_disputes_for(tr, self.allowed, "ACE"), [])
+
+    def test_truncates_long_reasoning(self):
+        long = "Asset owns this " * 100
+        tr = {"boundary_disputes": [self._bundle_dispute(
+            reasoning={"_untrusted": True, "text": long})]}
+        out = _boundary_disputes_for(tr, self.allowed, "ACE")
+        self.assertTrue(out[0]["reasoning"].endswith("…"))
+        self.assertLessEqual(len(out[0]["reasoning"]), 280)
 
 
 class ValidateEdgeCasesTests(unittest.TestCase):

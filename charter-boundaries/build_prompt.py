@@ -82,6 +82,35 @@ def _filter_misroutes(audit):
     return out
 
 
+def _filter_boundary_disputes(audit, focus_team):
+    """Keep `split_charter` tickets where the audit identified an external
+    candidate team — the user takes this list to other teams' standups for
+    ownership conversations. Skips disputes that point back at the focus
+    team itself (apply.py upstream blanks should_be_at to "" in that case)
+    and skips low-confidence cases (noisy). out_of_charter_work is NOT a
+    filter here — split_charter implies shared work by definition."""
+    out = []
+    for t in audit.get("tickets", []):
+        if t.get("verdict") != "split_charter":
+            continue
+        if t.get("confidence") not in ALLOWED_CONFIDENCES:
+            continue
+        candidate = (t.get("should_be_at") or "").strip()
+        if not candidate or candidate == focus_team:
+            continue
+        out.append({
+            "key": t.get("key", ""),
+            "summary": wrap_untrusted(_smart_truncate(t.get("summary", ""), MAX_SUMMARY_CHARS)),
+            "candidate_team": candidate,
+            "confidence": t.get("confidence", ""),
+            "reasoning": wrap_untrusted(_smart_truncate(t.get("reasoning", ""), MAX_REASONING_CHARS)),
+            "current_team": t.get("current_team", ""),
+            "priority": t.get("priority", ""),
+            "status": t.get("status", ""),
+        })
+    return out
+
+
 def main():
     if not os.path.exists(SETUP_PATH):
         print("ERROR: %s not found. Run setup.py first." % SETUP_PATH, file=sys.stderr)
@@ -104,6 +133,7 @@ def main():
             continue
         team_inputs = inputs["teams"].get(canonical, {"charter_blurb": "", "examples": []})
         misroutes = _filter_misroutes(audit)
+        boundary_disputes = _filter_boundary_disputes(audit, canonical)
         curated = []
         for ex in team_inputs.get("examples", []):
             curated.append({
@@ -119,6 +149,7 @@ def main():
             "charter_blurb": wrap_untrusted(_smart_truncate(team_inputs.get("charter_blurb", ""), MAX_BLURB_CHARS)),
             "curated_examples": curated,
             "misroutes": misroutes,
+            "boundary_disputes": boundary_disputes,
             "audit_window": audit.get("period", {}),
             "audit_candidates_count": audit.get("candidates_count", 0),
         })
@@ -140,9 +171,10 @@ def main():
 
     print("=== BUNDLE ===")
     for tr in teams_records:
-        print("  %-15s  charter=%4d chars  examples=%d  misroutes=%d" % (
+        print("  %-15s  charter=%4d chars  examples=%d  misroutes=%d  disputes=%d" % (
             tr["team"], len(tr["charter_blurb"]["text"]),
-            len(tr["curated_examples"]), len(tr["misroutes"])))
+            len(tr["curated_examples"]), len(tr["misroutes"]),
+            len(tr["boundary_disputes"])))
     print("\nBundle saved to %s" % BUNDLE_PATH)
 
 

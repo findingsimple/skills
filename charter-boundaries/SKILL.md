@@ -14,13 +14,14 @@ allowed-tools: Bash Read Agent
 
 # Charter Boundaries
 
-Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with five sections:
+Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with six sections:
 
 1. **Owns** — concrete ownership items extracted from the existing charter blurb.
 2. **Should own (frequently mis-routed away)** — tickets that landed at another team but belong here, sourced from the user's curated `examples.md`. This is the *inbound* drift counterpart to "Does not own".
-3. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme. *Outbound* drift.
-4. **Boundary rules** — if/then language already in the charter (most teams have none).
-5. **Edge case registry** — empty placeholder for the team to populate over time.
+3. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme. *Outbound* drift, clean misroutes only.
+4. **Boundary disputes** — `split_charter` cases from the audit grouped by candidate team. Tickets to discuss with another team's PM to resolve ownership; agreed calls feed the *Edge case registry* below.
+5. **Boundary rules** — if/then language already in the charter (most teams have none).
+6. **Edge case registry** — empty placeholder for the team to populate over time.
 
 Outputs go to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Charter Clarification/{end_year}/Charter Boundaries — {team} — {YYYY-MM-DD}.md` for every team that has a `SPRINT_TEAMS` slot.
 
@@ -173,16 +174,18 @@ Each per-team draft contains:
 - `## Owns` — bulleted list seeded from the charter blurb.
 - `## Should own (frequently mis-routed away)` — tickets from the user's curated `examples.md` where `to_team == this team`, grouped by `from_team`, rendered as Jira links. Empty for teams with no inbound-drift examples; an empty-state hint tells the user how to add new examples.
 - `## Does not own (common mistakes)` — one section per cluster, each with description, boundary rule, and `**Evidence:**` line linking to Jira tickets.
+- `## Boundary disputes` — `split_charter` cases from the audit, grouped by candidate team, one bullet per ticket: link + priority + summary + agent reasoning. The user takes this list to other teams' standups for ownership conversations.
 - `## Boundary rules` — bulleted list (often empty initially).
 - `## Edge case registry` — placeholder table for the team to fill in.
 
-The team owner is expected to review and refine each section. The "Does not own" clusters and "Should own" examples are the data-grounded parts — the rest is scaffolding.
+The team owner is expected to review and refine each section. The "Does not own" clusters, "Should own" examples, and "Boundary disputes" tickets are the data-grounded parts — the rest is scaffolding.
 
-### Inbound vs outbound drift
+### Drift directions captured
 
-The skill captures two distinct drift directions:
+The skill captures three classes of drift:
 
-- **Outbound** — tickets that landed at this team but belong elsewhere. Sourced from the routing-audit pipeline (audits the team's intake, sub-agent verdicts → clusters). Lives in *Does not own (common mistakes)*.
+- **Outbound (clean misroutes)** — tickets that landed at this team but belong elsewhere with high confidence. Sourced from the routing-audit pipeline. Lives in *Does not own (common mistakes)*.
+- **Boundary disputes** — tickets the audit flagged as `split_charter` with at least medium confidence and a candidate team that isn't the focus. The work touches multiple charters; the agent identifies a likely owner but isn't confident enough to call it a misroute. Lives in *Boundary disputes*.
 - **Inbound** — tickets that landed at another team but belong here. Sourced from the user's hand-curated `examples.md`. Lives in *Should own (frequently mis-routed away)*.
 
-The audit pipeline only sees teams with `SPRINT_TEAMS` slots, so it can't auto-detect inbound drift today (see *Out of scope* below). Curated examples close the gap — when L2 reroutes a ticket, add a line to `examples.md` and the next run picks it up.
+The audit pipeline only sees teams with `SPRINT_TEAMS` slots, so it can't auto-detect inbound drift today. Curated examples close the gap — when L2 reroutes a ticket, add a line to `examples.md` and the next run picks it up.

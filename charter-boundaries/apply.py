@@ -112,6 +112,49 @@ def _validate_cluster(rec, allowed_teams, valid_evidence, valid_curated, team):
     }
 
 
+def _boundary_disputes_for(team_record, allowed_teams, focus_team):
+    """Carry split_charter cases from the bundle into draft.json so the
+    renderer can show them as a list of tickets to discuss with other teams.
+
+    Validation:
+    - ticket key matches _KEY_RE
+    - candidate_team is in allowed_teams AND != focus_team
+    - confidence is high or medium (already filtered upstream, re-validated here)
+    - free-text fields word-boundary truncated to safe lengths
+
+    The summary and reasoning come from build_prompt.py wrapped untrusted; we
+    unwrap here for the renderer (vault Markdown is the user's own surface).
+    """
+    out = []
+    for d in team_record.get("boundary_disputes") or []:
+        key = (d.get("key") or "").strip()
+        if not _KEY_RE.match(key):
+            continue
+        candidate = (d.get("candidate_team") or "").strip()
+        if candidate not in allowed_teams or candidate == focus_team:
+            continue
+        confidence = (d.get("confidence") or "").strip().lower()
+        if confidence not in {"high", "medium"}:
+            continue
+        # Unwrap untrusted-wrapped text fields. The renderer escapes the values
+        # into Markdown; the vault is the user's own surface so unwrapping here
+        # is safe for rendering.
+        summary_obj = d.get("summary") or {}
+        summary = summary_obj.get("text", "") if isinstance(summary_obj, dict) else str(summary_obj)
+        reasoning_obj = d.get("reasoning") or {}
+        reasoning = reasoning_obj.get("text", "") if isinstance(reasoning_obj, dict) else str(reasoning_obj)
+        out.append({
+            "key": key,
+            "summary": _smart_truncate(summary, 200),
+            "candidate_team": candidate,
+            "confidence": confidence,
+            "reasoning": _smart_truncate(reasoning, 280),
+            "current_team": str(d.get("current_team") or "")[:64],
+            "priority": str(d.get("priority") or "")[:32],
+        })
+    return out
+
+
 def _curated_examples_for(team_record):
     """Carry the bundle's curated examples through to draft.json so the
     renderer can surface them as inbound drift ("Should own — frequently
@@ -213,6 +256,7 @@ def main():
             "boundary_rules_seed": boundary_rules_seed,
             "does_not_own_clusters": clusters,
             "should_own_examples": _curated_examples_for(tr),
+            "boundary_disputes": _boundary_disputes_for(tr, allowed_teams, team),
             "edge_cases_seed": edge_cases,
         })
 
@@ -230,6 +274,7 @@ def main():
             "boundary_rules_seed": [],
             "does_not_own_clusters": [],
             "should_own_examples": _curated_examples_for(tr),
+            "boundary_disputes": _boundary_disputes_for(tr, allowed_teams, tr["team"]),
             "edge_cases_seed": [],
         })
 
@@ -244,10 +289,10 @@ def main():
 
     print("=== DRAFT ===")
     for t in teams_out:
-        print("  %-15s  owns=%2d  should_own=%d  clusters=%d  rules=%d  edge=%d" % (
+        print("  %-15s  owns=%2d  should_own=%d  clusters=%d  disputes=%d  rules=%d  edge=%d" % (
             t["team"], len(t["owns_seed"]), len(t["should_own_examples"]),
-            len(t["does_not_own_clusters"]), len(t["boundary_rules_seed"]),
-            len(t["edge_cases_seed"])))
+            len(t["does_not_own_clusters"]), len(t["boundary_disputes"]),
+            len(t["boundary_rules_seed"]), len(t["edge_cases_seed"])))
     print("\nDraft saved to %s" % DRAFT_PATH)
 
 

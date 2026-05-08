@@ -4,7 +4,7 @@
 import unittest
 
 import _libpath  # noqa: F401
-from build_prompt import _filter_misroutes
+from build_prompt import _filter_misroutes, _filter_boundary_disputes
 
 
 def _ticket(**overrides):
@@ -85,6 +85,70 @@ class FilterMisroutesTests(unittest.TestCase):
         # key + should_be_at + confidence + transitions stay raw — they're agent-validated.
         self.assertEqual(rec["key"], "ECS-100")
         self.assertEqual(rec["should_be_at"], "Echo")
+
+
+def _split(**overrides):
+    base = {
+        "key": "ECS-200",
+        "verdict": "split_charter",
+        "should_be_at": "Asset",
+        "confidence": "medium",
+        "reasoning": "Inspections are Asset; provisioning is ACE.",
+        "out_of_charter_work": True,
+        "summary": "Unable to see Inspections for property",
+        "current_team": "ACE",
+        "first_team": "Seco",
+        "transition_count": 1,
+        "priority": "High",
+        "status": "Open",
+    }
+    base.update(overrides)
+    return base
+
+
+class FilterBoundaryDisputesTests(unittest.TestCase):
+    """Pin the split_charter filter — different from misroutes (no
+    out_of_charter_work filter, must reject self-pointing candidates)."""
+
+    def test_keeps_external_candidate(self):
+        out = _filter_boundary_disputes({"tickets": [_split()]}, "ACE")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["candidate_team"], "Asset")
+
+    def test_drops_self_pointing(self):
+        out = _filter_boundary_disputes(
+            {"tickets": [_split(should_be_at="ACE")]}, "ACE")
+        self.assertEqual(out, [])
+
+    def test_drops_empty_candidate(self):
+        # apply.py upstream blanks should_be_at when it equals focus_team.
+        out = _filter_boundary_disputes(
+            {"tickets": [_split(should_be_at="")]}, "ACE")
+        self.assertEqual(out, [])
+
+    def test_drops_low_confidence(self):
+        out = _filter_boundary_disputes(
+            {"tickets": [_split(confidence="low")]}, "ACE")
+        self.assertEqual(out, [])
+
+    def test_keeps_when_out_of_charter_false(self):
+        # Unlike misroutes: split_charter implies shared work by definition,
+        # so out_of_charter_work isn't a filter. Pin this distinction.
+        out = _filter_boundary_disputes(
+            {"tickets": [_split(out_of_charter_work=False)]}, "ACE")
+        self.assertEqual(len(out), 1)
+
+    def test_drops_other_verdicts(self):
+        for v in ["belongs_at_focus", "should_be_elsewhere", "insufficient_evidence"]:
+            out = _filter_boundary_disputes(
+                {"tickets": [_split(verdict=v)]}, "ACE")
+            self.assertEqual(out, [], "verdict=%r should be dropped" % v)
+
+    def test_untrusted_fields_wrapped(self):
+        out = _filter_boundary_disputes({"tickets": [_split()]}, "ACE")
+        self.assertEqual(out[0]["summary"]["_untrusted"], True)
+        self.assertEqual(out[0]["reasoning"]["_untrusted"], True)
+        self.assertEqual(out[0]["candidate_team"], "Asset")  # raw, validated
 
 
 if __name__ == "__main__":
