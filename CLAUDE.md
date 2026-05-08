@@ -59,6 +59,9 @@ Each skill lives in its own directory with a `SKILL.md` file:
     POST_ENRICH_QUALITY_PROMPT.md  # Agent prompt for post-enrichment quality assessment (analyze Step A2b)
     DUPLICATE_PROMPT.md # Agent prompt for semantic duplicate detection (analyze Step A2c)
     TYPE_SOP_PROMPT.md  # Agent prompt for issue type SOP check (analyze Step A2e)
+    comment.py          # Mode: comment — parse vault Markdown, build ADF, post or idempotently update a single AI-enriched Jira comment
+    test_comment.py     # Unit tests for comment.py (parser, marker matching, lock, --from-jql / --limit)
+    _vault.py           # Shared helper: find_issue_markdown(issues_dir, key) — used by comment.py / enrich.py / autofill.py
   sprint-metrics/
     SKILL.md
     _libpath.py

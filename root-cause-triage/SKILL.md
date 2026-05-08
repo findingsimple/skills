@@ -2,7 +2,7 @@
 name: root-cause-triage
 description: Collects root cause ticket data to Obsidian knowledge base, analyzes for duplicates, quality, and completeness, and posts AI-enriched info back to Jira tickets as comments. Use when the user asks to collect root cause data, check for duplicate issues, assess issue quality, or push enriched info back to Jira.
 disable-model-invocation: true
-argument-hint: "[collect|analyze|comment] [--issue KEY] [--keys K1,K2] [--from-file PATH] [--status STATUS] [--dry-run] [--force] [--index-only]"
+argument-hint: "[collect|analyze|comment] [--issue KEY] [--keys K1,K2] [--from-file PATH] [--from-jql JQL] [--limit N] [--status STATUS] [--dry-run] [--force] [--index-only]"
 ---
 
 # Root Cause Triage
@@ -27,6 +27,8 @@ For JQL- and URL-injection safety, the following inputs are validated against st
 | `--issue KEY` | `\A[A-Z][A-Z0-9_]+-\d+\Z` | Same as above |
 | `--keys K1,K2,…` | `\A[A-Z][A-Z0-9_]+-\d+\Z` per element | Comment mode batch input (split on commas, trimmed, then validated) |
 | `--from-file PATH` lines | `\A[A-Z][A-Z0-9_]+-\d+\Z` per line | Comment mode batch input (one key per line) |
+| `--from-jql JQL` | each issue key returned must match `\A[A-Z][A-Z0-9_]+-\d+\Z` | Comment mode JQL resolver. JQL itself is sent verbatim to Jira (it's the query language), but every returned key is re-validated before any URL interpolation. |
+| `--limit N` | positive integer | Comment mode safety cap on batch size. Default 200; hard fail if exceeded. Raise explicitly to confirm. |
 | `--status STATUS` | `^[A-Za-z][A-Za-z0-9 _\-/:&.']*$` | Covers real-world statuses like `"In Review/QA"`, `"Blocked: External"` |
 
 If a board uses a status name with characters outside this set, widen `_STATUS_RE` in `collect.py` after auditing JQL-injection risk.
@@ -370,9 +372,12 @@ If multiple AI comments authored by us are present (e.g., copy-pasted), only the
 python3 ~/.claude/skills/root-cause-triage/comment.py --issue PROJ-123 [--dry-run]
 python3 ~/.claude/skills/root-cause-triage/comment.py --keys PROJ-123,PROJ-124 [--dry-run]
 python3 ~/.claude/skills/root-cause-triage/comment.py --from-file /tmp/keys.txt [--dry-run]
+python3 ~/.claude/skills/root-cause-triage/comment.py --from-jql 'parentEpic = PROJ-99 AND status = "Backlog"' [--dry-run]
 ```
 
-Exactly one of `--issue` / `--keys` / `--from-file` is required. There is intentionally no "comment on every enriched ticket" sweep — pick keys explicitly.
+Exactly one of `--issue` / `--keys` / `--from-file` / `--from-jql` is required. There is intentionally no "comment on every enriched ticket" sweep — pick keys explicitly via one of those four selectors.
+
+`--limit N` (default 200) hard-caps the batch size. If a JQL or `--from-file` would exceed it, the script refuses with a message telling you the count and how to opt in. Raise explicitly to confirm an unusually large run.
 
 The script:
 
@@ -387,8 +392,36 @@ The script:
 
 ### Dry-run behaviour
 
-`--dry-run` prints the resolved vault path, the sections that were detected, and the full ADF JSON body for each ticket — no network calls. Use this to preview the comment shape before posting for the first time, or to confirm a vault edit produces the expected output.
+`--dry-run` prints the resolved vault path, the sections that were detected, and the full ADF JSON body for each ticket — no network calls. Dry-run **also skips the concurrency lock** (it's read-only).
+
+### Concurrency lock
+
+A live run writes `/tmp/triage_comment.lock` (PID + ISO timestamp). On entry, comment.py checks for the lock and:
+- Refuses to start if the lock's PID is alive — prevents the "rejected tool call kept running and a re-run created confusing duplicate state" failure mode.
+- Overwrites the lock with a warning if the PID is gone (stale lock from an interrupted run).
+- Removes the lock via `atexit` on clean exit.
+
+If the script crashes hard, manually `rm /tmp/triage_comment.lock` to recover.
+
+### Per-ticket error handling
+
+A network blip, transient 403, or unexpected vault-file shape on ticket N no longer aborts the rest of the batch. Each `process_key` is wrapped — failures print to stderr and increment an `error:` counter in the final summary; the loop continues to ticket N+1.
+
+### Progress + timing
+
+Every per-ticket line is prefixed `[N/M]` (N = position in the batch, M = total). The summary prints elapsed wall-clock — useful for sizing future runs and for spotting Jira slowdowns.
+
+### Board UI count vs JQL count
+
+The Jira board's column count and a `parentEpic = X AND status = "Backlog"` JQL can disagree by 1–2 tickets. Common causes:
+
+- The board shows the parent epic itself as a card.
+- A subtask appears separately in the swimlane but isn't returned by the parent-epic JQL.
+- Recent moves between columns happened between the count and the query.
+- The board's underlying filter spans multiple `parentEpic` values; the user-visible count may be filtered to one epic via UI controls that aren't reflected in the URL.
+
+If you need to know exactly which keys the script will touch before running, use `--dry-run` and compare against the board.
 
 ### Exit code
 
-The script exits non-zero only if **every** requested ticket was skipped (no vault file or no enrichment for any key). A partial batch — some posted, some skipped — is treated as success so a long batch is not aborted by a few missing tickets.
+The script exits non-zero only if **every** requested ticket was skipped or errored (no vault file, no enrichment, or per-ticket exception for every key). A partial batch — some posted, some skipped, some errored — is treated as success so a long batch is not aborted by a few missing tickets.

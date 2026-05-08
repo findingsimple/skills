@@ -16,7 +16,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
 | [retro-summary](retro-summary/) | `/retro-summary` | Extract and summarize retrospectives from FigJam boards into Obsidian vault |
 | [root-cause-suggest](root-cause-suggest/) | `/root-cause-suggest [--team <name>] [--keys K1,K2 \| --from-file path] [--since 30d]` | Suggest root-cause links for a batch of unlinked support tickets. Default mode auto-discovers unlinked tickets in the focus team's recent intake; per ticket the sub-agent recommends linking to an existing root cause, proposing a new one (clusters tickets that share an underlying issue), or skipping with a reason. Output is a Markdown report — high-confidence links are bulk-applyable, the rest are review-first. Never mutates Jira. |
-| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base and analyze for duplicates, quality, and completeness |
+| [root-cause-triage](root-cause-triage/) | `/root-cause-triage` | Collect root cause tickets to Obsidian knowledge base, analyze for duplicates and quality, and post AI-enriched info back to Jira tickets as comments |
 | [sprint-metrics](sprint-metrics/) | `/sprint-metrics` | Generate engineering metrics (TTM, review turnaround, cycle time) and DORA metrics (deployment frequency, lead time) from GitLab for a sprint |
 | [sprint-pulse](sprint-pulse/) | `/sprint-pulse` | Generate mid-sprint alerts and DORA snapshot from Jira sprint data, GitLab MRs, and support tickets |
 | [sprint-summary](sprint-summary/) | `/sprint-summary` | Generate sprint summary from Jira data into Obsidian vault |
@@ -227,7 +227,7 @@ Extract retrospective data from a FigJam board, synthesize themes with AI, and w
 
 ### root-cause-triage
 
-Two modes for working with root cause tickets on a Jira board:
+Three modes for working with root cause tickets on a Jira board:
 
 **Collect** — build a per-issue Obsidian knowledge base from Jira data. Fetches issues and linked issue details, writes structured Markdown with extractive summaries, uses agents to produce quality linked issue summaries plus a root cause analysis synthesis, then auto-fills missing template sections (Background / Steps / Actual / Expected / Analysis) for issues scoring 0/5. Per-issue files include `tags: [root-cause]` frontmatter (plus classification tag after enrichment) for Obsidian graph clustering:
 ```bash
@@ -245,6 +245,15 @@ Two modes for working with root cause tickets on a Jira board:
 /root-cause-triage analyze                    # analyze all statuses (default)
 /root-cause-triage analyze --status "To Triage" # filter by status
 /root-cause-triage analyze --issue PROJ-1234  # analyze a single issue
+```
+
+**Comment** — manually push the AI-enriched root cause info from the vault back to a Jira ticket as a single dedicated comment. The original ticket description and other fields are never modified; re-runs detect a marker comment and update it in place (PUT). Author check via `/myself` prevents clobbering someone else's comment. A `/tmp/triage_comment.lock` file blocks concurrent runs:
+```bash
+/root-cause-triage comment --issue PROJ-1234                 # post to one ticket
+/root-cause-triage comment --keys PROJ-1,PROJ-2 --dry-run    # preview ADF for several
+/root-cause-triage comment --from-file /tmp/keys.txt         # batch from file
+/root-cause-triage comment --from-jql 'parentEpic = PROJ-99 AND status = "Backlog"'
+/root-cause-triage comment --from-jql '...' --limit 500      # raise the safety cap
 ```
 
 **Prerequisites:**

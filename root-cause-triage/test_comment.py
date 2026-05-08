@@ -221,15 +221,27 @@ class CommentIdRegexTests(unittest.TestCase):
 
 
 class BuildAdfTests(unittest.TestCase):
-    def test_marker_header_is_first_node(self):
+    def test_marker_is_first_node_strong_paragraph(self):
         adf = comment.build_adf("Some RCA.", {})
-        self.assertEqual(adf["content"][0]["type"], "heading")
-        self.assertEqual(adf["content"][0]["content"][0]["text"], comment.COMMENT_HEADER)
+        first = adf["content"][0]
+        self.assertEqual(first["type"], "paragraph")
+        self.assertEqual(first["content"][0]["text"], comment.COMMENT_HEADER)
+        self.assertEqual(first["content"][0]["marks"], [{"type": "strong"}])
 
-    def test_no_rca_no_autofill_still_produces_header_and_intro(self):
+    def test_no_rca_no_autofill_produces_marker_only(self):
         adf = comment.build_adf("", {})
-        # heading + intro paragraph only
-        self.assertEqual(len(adf["content"]), 2)
+        self.assertEqual(len(adf["content"]), 1)
+        self.assertEqual(adf["content"][0]["type"], "paragraph")
+
+    def test_marker_survives_adf_to_text_round_trip(self):
+        # Critical: the simple adf_to_text drops heading nodes. The marker must be
+        # in a paragraph so the first line of body_text matches COMMENT_HEADER.
+        import _libpath  # noqa: F401
+        from jira_client import adf_to_text
+        adf = comment.build_adf("Some RCA.", {})
+        body_text = adf_to_text(adf)
+        first_line = body_text.strip().splitlines()[0]
+        self.assertEqual(first_line, comment.COMMENT_HEADER)
 
     def test_canonical_section_order_preserved(self):
         sections = {
@@ -319,6 +331,132 @@ class AdfSizeCapTests(unittest.TestCase):
         import json
         size = len(json.dumps({"body": adf}).encode("utf-8"))
         self.assertLess(size, comment.MAX_ADF_BYTES)
+
+
+class AcquireLockTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.lock = os.path.join(self.tmp, "test.lock")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_no_lock_acquires_cleanly(self):
+        comment.acquire_lock(self.lock)
+        self.assertTrue(os.path.exists(self.lock))
+        with open(self.lock) as f:
+            content = f.read().strip()
+        pid_str = content.split()[0]
+        self.assertEqual(int(pid_str), os.getpid())
+
+    def test_live_pid_lock_refuses(self):
+        # Our own pid is alive — write it as the existing lock and re-acquire.
+        with open(self.lock, "w") as f:
+            f.write("%d 2026-01-01T00:00:00\n" % os.getpid())
+        with self.assertRaises(SystemExit) as ctx:
+            comment.acquire_lock(self.lock)
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_stale_pid_lock_overwrites(self):
+        # Find a definitely-dead PID — try a high one.
+        for candidate in (999999, 999998, 99999):
+            try:
+                os.kill(candidate, 0)
+            except OSError:
+                dead_pid = candidate
+                break
+        else:
+            self.skipTest("no dead PID available")
+        with open(self.lock, "w") as f:
+            f.write("%d 2020-01-01T00:00:00\n" % dead_pid)
+        comment.acquire_lock(self.lock)  # should not raise
+        with open(self.lock) as f:
+            self.assertIn(str(os.getpid()), f.read())
+
+    def test_malformed_lock_overwrites(self):
+        with open(self.lock, "w") as f:
+            f.write("not a pid\n")
+        comment.acquire_lock(self.lock)  # should not raise
+        with open(self.lock) as f:
+            self.assertIn(str(os.getpid()), f.read())
+
+    def test_release_lock_removes_file(self):
+        comment.acquire_lock(self.lock)
+        self.assertTrue(os.path.exists(self.lock))
+        comment.release_lock(self.lock)
+        self.assertFalse(os.path.exists(self.lock))
+
+
+class CollectKeysTests(unittest.TestCase):
+    """Coverage for the new --from-jql + --limit branches."""
+
+    class _Args:
+        issue = None
+        keys = None
+        from_file = None
+        from_jql = None
+        limit = comment.DEFAULT_LIMIT
+
+    def test_from_jql_resolves_keys(self):
+        captured = {}
+
+        def fake_search(base, auth, jql, fields, limit=None):
+            captured["jql"] = jql
+            return [{"key": "PROJ-1"}, {"key": "PROJ-2"}]
+
+        original = comment.jira_search_all
+        comment.jira_search_all = fake_search
+        try:
+            args = self._Args()
+            args.from_jql = 'parentEpic = PROJ-99 AND status = "Backlog"'
+            keys = comment.collect_keys(args, ["/tmp"], base_url="https://x", auth="auth")
+            self.assertEqual(keys, ["PROJ-1", "PROJ-2"])
+            self.assertEqual(captured["jql"], args.from_jql)
+        finally:
+            comment.jira_search_all = original
+
+    def test_from_jql_empty_result_errors(self):
+        comment_orig = comment.jira_search_all
+        comment.jira_search_all = lambda *a, **k: []
+        try:
+            args = self._Args()
+            args.from_jql = "project = NOPE"
+            with self.assertRaises(SystemExit):
+                comment.collect_keys(args, ["/tmp"], base_url="https://x", auth="auth")
+        finally:
+            comment.jira_search_all = comment_orig
+
+    def test_from_jql_without_auth_errors(self):
+        args = self._Args()
+        args.from_jql = "project = X"
+        with self.assertRaises(SystemExit):
+            comment.collect_keys(args, ["/tmp"])
+
+    def test_limit_cap_blocks_oversize_batch(self):
+        args = self._Args()
+        args.keys = ",".join(["PROJ-%d" % i for i in range(1, 12)])
+        args.limit = 5
+        with self.assertRaises(SystemExit):
+            comment.collect_keys(args, ["/tmp"])
+
+    def test_limit_cap_allows_at_threshold(self):
+        args = self._Args()
+        args.keys = "PROJ-1,PROJ-2,PROJ-3"
+        args.limit = 3
+        keys = comment.collect_keys(args, ["/tmp"])
+        self.assertEqual(keys, ["PROJ-1", "PROJ-2", "PROJ-3"])
+
+    def test_invalid_key_in_jql_result_rejected(self):
+        comment_orig = comment.jira_search_all
+        comment.jira_search_all = lambda *a, **k: [{"key": "lowercase-1"}]
+        try:
+            args = self._Args()
+            args.from_jql = "x"
+            with self.assertRaises(SystemExit):
+                comment.collect_keys(args, ["/tmp"], base_url="https://x", auth="auth")
+        finally:
+            comment.jira_search_all = comment_orig
 
 
 if __name__ == "__main__":
