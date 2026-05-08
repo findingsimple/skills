@@ -88,6 +88,19 @@ Each skill lives in its own directory with a `SKILL.md` file:
     build_prompt.py     # BM25-lite per-ticket shortlist + untrusted wrapping + 256KB bundle cap → bundle.json
     apply.py            # Validate sub-agent decisions, demote invalid existing_root_cause_key to insufficient_evidence, group propose_new clusters → audit.json
     report.py           # Render Markdown to /tmp + vault (Support/Root Cause Links/{year}/) with frontmatter and hub-link probe
+  charter-boundaries/
+    .scratch/                  # User-supplied charters.md + examples.md (gitignored)
+    SKILL.md                   # Slash-only orchestration: setup → parse_inputs → per-team audit loop → snapshot → build_prompt → sub-agent → apply → report
+    SYNTHESISE_PROMPT.md       # Sub-agent prompt with security banner; per-team owns_seed + boundary_rules_seed + does_not_own_clusters + edge_cases_seed
+    _libpath.py
+    setup.py                   # Validates env, parses CHARTER_TEAMS, resolves charters + examples paths, picks focus teams (those with SPRINT_TEAMS slots)
+    parse_inputs.py            # Splits charters.md by H2 per team + flat misroute list from examples.md → /tmp/charter-boundaries/inputs.json
+    snapshot.py                # Copies /tmp/support-routing-audit/audit.json → /tmp/charter-boundaries/audits/<TeamSlug>.json after each per-team audit
+    build_prompt.py            # Aggregates audit snapshots + parsed inputs into bundle.json (untrusted-content wrapped)
+    apply.py                   # Validates synthesise results.json (theme_id format, evidence_keys + anchored_by_curated containment, length truncation) → draft.json
+    report.py                  # Renders per-team Markdown drafts into vault (Support/Charter Clarification/{year}/); --from-cache re-renders without re-running pipeline
+    test_parse_inputs.py       # Unit tests for H2 splitter + alias matching + misroute regex
+    test_apply.py              # Unit tests for cluster validation + word-boundary truncation
   support-routing-audit/
     SKILL.md            # Slash-only orchestration: setup → fetch → bundle → sub-agent → apply → report
     AUDIT_PROMPT.md     # Sub-agent prompt with security banner; per-ticket charter verdict + summary
@@ -238,13 +251,13 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | Variable | Used by |
 |----------|---------|
 | `OBSIDIAN_VAULT_PATH` | retro-summary, reflect |
-| `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse |
+| `OBSIDIAN_TEAMS_PATH` | bonusly-sync, feedback-perf, retro-summary, sprint-pulse, charter-boundaries |
 | `BONUSLY_API_TOKEN` | bonusly-sync |
 | `STATEMENTS_PATH` | bank-statement-to-markdown |
-| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
-| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
-| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends |
-| `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse, support-routing-audit, root-cause-suggest, support-trends |
+| `JIRA_BASE_URL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends, charter-boundaries |
+| `JIRA_EMAIL` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends, charter-boundaries |
+| `JIRA_API_TOKEN` | sprint-summary, sprint-metrics, sprint-pulse, root-cause-triage, root-cause-suggest, incident-kb, support-ticket-triage, support-routing-audit, support-trends, charter-boundaries |
+| `SPRINT_TEAMS` | sprint-summary, sprint-metrics, sprint-pulse, support-routing-audit, root-cause-suggest, support-trends, charter-boundaries |
 | `GITLAB_URL` | sprint-metrics, sprint-pulse |
 | `GITLAB_TOKEN` | sprint-metrics, sprint-pulse |
 | `GITLAB_PROJECT_ID` | sprint-metrics, sprint-pulse |
@@ -252,15 +265,15 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `TRIAGE_PARENT_ISSUE_KEY` | root-cause-triage |
 | `TRIAGE_OUTPUT_PATH` | root-cause-triage |
 | `TRUSTED_TYPE_REVIEWERS` | root-cause-triage (optional; comma-separated Jira display names whose prior `issuetype` change suppresses the type-sop suggestion) |
-| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage, support-routing-audit, root-cause-suggest, support-trends |
+| `SUPPORT_PROJECT_KEY` | sprint-summary, sprint-pulse, support-ticket-triage, support-routing-audit, root-cause-suggest, support-trends, charter-boundaries |
 | `CODEBASE_PATH` | support-ticket-triage (absolute path to codebase for sub-agent investigation) |
 | `CODE_SEARCH_EXTENSIONS` | support-ticket-triage (optional; comma-separated file extensions, default `rb,ts,tsx,go,py,js,jsx,rs,java`) |
 | `SUPPORT_BOARD_ID` | sprint-pulse |
 | `SUPPORT_BOARD_ID` | sprint-pulse, support-trends |
-| `SUPPORT_TEAM_LABEL` | sprint-pulse, support-routing-audit, support-trends |
-| `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse, support-routing-audit, support-trends |
-| `CHARTER_TEAMS` | support-routing-audit, support-trends (pipe-delimited canonical team names, optional comma-separated aliases per slot) |
-| `CHARTERS_PATH` | support-routing-audit (optional override; must resolve under `OBSIDIAN_TEAMS_PATH` or the skill dir) |
+| `SUPPORT_TEAM_LABEL` | sprint-pulse, support-routing-audit, support-trends, charter-boundaries |
+| `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse, support-routing-audit, support-trends, charter-boundaries |
+| `CHARTER_TEAMS` | support-routing-audit, support-trends, charter-boundaries (pipe-delimited canonical team names, optional comma-separated aliases per slot) |
+| `CHARTERS_PATH` | support-routing-audit, charter-boundaries (optional override; must resolve under `OBSIDIAN_TEAMS_PATH` or the skill dir) |
 | `RETRO_PARENT_PAGE_ID` | incident-kb |
 | `RETRO_TEMPLATE_PAGE_ID` | incident-kb |
 | `INC_PROJECT_KEY` | incident-kb |

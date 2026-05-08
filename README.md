@@ -11,6 +11,7 @@ Skills are reusable prompt-based capabilities that extend Claude Code. They can 
 | Skill | Command | Description |
 |-------|---------|-------------|
 | [bank-statement-to-markdown](bank-statement-to-markdown/) | `/bank-statement-to-markdown` | Convert St.George Bank PDF statements (Complete Freedom, Amplify Signature) into agent-friendly Markdown |
+| [charter-boundaries](charter-boundaries/) | `/charter-boundaries [--window <Nd>] [--from-cache]` | Build a per-team Charter Boundaries draft (routing decision aid) into the Obsidian vault. Combines the existing narrative charter, hand-curated mis-allocation examples (`.scratch/charters.md` + `.scratch/examples.md`), and clustered routing-audit evidence. Each draft has Owns / Does not own (common mistakes) / Boundary rules / Edge case registry sections. The "Does not own" clusters are data-grounded; the rest is scaffolding for the team to refine. |
 | [bonusly-sync](bonusly-sync/) | `/bonusly-sync` | Sync previous month's Bonusly recognition to Obsidian vault |
 | [incident-kb](incident-kb/) | `/incident-kb` | Build searchable Obsidian knowledge base from Confluence incident retros and Jira INC epics |
 | [feedback-perf](feedback-perf/) | `/feedback-perf` | Capture and synthesize performance review feedback in Obsidian vault |
@@ -156,6 +157,23 @@ Converts St.George Bank PDF statements (Complete Freedom transaction accounts an
 
 **Prerequisites:**
 - `STATEMENTS_PATH` in `~/.zshrc` pointing at the directory containing the PDFs
+
+### charter-boundaries
+
+Builds a per-team **Charter Boundaries** draft (routing decision aid) into the Obsidian vault. Each draft combines the team's existing narrative charter, ~5 hand-curated mis-allocation examples, and clusters of misrouted tickets surfaced by the existing `support-routing-audit` pipeline.
+
+```bash
+/charter-boundaries                          # default 30-day window, all focus teams in SPRINT_TEAMS
+/charter-boundaries --window 90d             # wider audit window for more cluster evidence
+/charter-boundaries --from-cache             # re-render from existing draft.json without re-running the pipeline
+```
+
+**Prerequisites:**
+- `~/.claude/skills/charter-boundaries/.scratch/charters.md` — current narrative charters (per-team H2 sections)
+- `~/.claude/skills/charter-boundaries/.scratch/examples.md` — hand-curated misroute examples (free-text lines `Assigned to X, but should belong to Y: <URL>`)
+- All env vars used by `support-routing-audit` (CHARTER_TEAMS, SPRINT_TEAMS, JIRA_*, SUPPORT_*, OBSIDIAN_TEAMS_PATH)
+
+Output goes to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Charter Clarification/{end_year}/Charter Boundaries — {team} — {YYYY-MM-DD}.md` for every team that has a `SPRINT_TEAMS` slot.
 
 ### bonusly-sync
 
