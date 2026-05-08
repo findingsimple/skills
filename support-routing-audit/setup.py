@@ -11,6 +11,7 @@ import sys
 from datetime import date
 
 import _libpath  # noqa: F401
+from charter_teams import TEAM_NAME_RE as _TEAM_NAME_RE, parse_charter_teams, norm_team
 from jira_client import load_env, init_auth, ensure_tmp_dir, atomic_write_json
 
 
@@ -18,7 +19,6 @@ CACHE_DIR = "/tmp/support-routing-audit"
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _PROJECT_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
-_TEAM_NAME_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9 _\-&]{0,63}\Z", re.ASCII)
 _DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z", re.ASCII)
 
 
@@ -26,54 +26,6 @@ def _require_match(pattern, value, name):
     if not pattern.match(value or ""):
         print("ERROR: %s is malformed: %r" % (name, value), file=sys.stderr)
         sys.exit(2)
-
-
-def parse_charter_teams(env_value):
-    """Parse the CHARTER_TEAMS env var into (canonical_names, alias_map).
-
-    Format (pipe-delimited per slot, optional comma-separated aliases):
-      "TeamA|TeamB|TeamC"
-      "TeamA:alpha,team alpha|TeamB|TeamC:gamma,team-c"
-
-    Returns ([canonical names in declared order], {lowercased_alias_or_canonical: canonical}).
-    Invalid names/aliases are dropped with a WARNING."""
-    canonicals = []
-    aliases = {}
-    if not env_value:
-        return canonicals, aliases
-    for slot in env_value.split("|"):
-        slot = slot.strip()
-        if not slot:
-            continue
-        if ":" in slot:
-            canonical, alias_csv = slot.split(":", 1)
-            canonical = canonical.strip()
-            alias_list = [a.strip() for a in alias_csv.split(",") if a.strip()]
-        else:
-            canonical = slot
-            alias_list = []
-        if not _TEAM_NAME_RE.match(canonical):
-            print("WARNING: CHARTER_TEAMS: skipping invalid canonical name %r" % canonical, file=sys.stderr)
-            continue
-        canonicals.append(canonical)
-        aliases[canonical.lower()] = canonical
-        for a in alias_list:
-            if not _TEAM_NAME_RE.match(a):
-                print("WARNING: CHARTER_TEAMS: skipping invalid alias %r for %s" % (a, canonical), file=sys.stderr)
-                continue
-            aliases[a.lower()] = canonical
-    return canonicals, aliases
-
-
-def norm_team(s, alias_map):
-    """Resolve a free-form team name against the alias map. Returns the canonical
-    name on hit, None on miss."""
-    if not isinstance(s, str):
-        return None
-    raw = s.strip()
-    if not raw:
-        return None
-    return alias_map.get(raw.lower())
 
 
 def _resolve_charters_path():

@@ -32,6 +32,8 @@ RESULTS_PATH = os.path.join(CACHE_DIR, "synthesise", "results.json")
 ANALYSIS_PATH = os.path.join(CACHE_DIR, "analysis.json")
 DATA_PATH = os.path.join(CACHE_DIR, "data.json")
 
+from text_utils import smart_truncate as _smart_truncate
+
 _VALID_CONFIDENCE = {"high", "medium", "low"}
 _VALID_AUDIENCE = {"exec", "support"}
 _KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+-\d+\Z", re.ASCII)
@@ -41,25 +43,6 @@ MAX_CLAIM_CHARS = 140
 # chars of useful prose and the action clause often runs into a recommendation
 # tail. 320 covers the long tail without inviting paragraphs.
 MAX_SO_WHAT_CHARS = 320
-
-
-def _smart_truncate(text, limit):
-    """Truncate `text` to at most `limit` chars without splitting a word.
-
-    If the raw string is already within limit, return it unchanged. Otherwise
-    cut to the last whitespace before `limit - 1` and append `…`. Falls back to
-    a hard cut when the string has no whitespace before the limit (e.g. a giant
-    URL): one ugly truncation is still better than a chopped-mid-word claim.
-    """
-    if text is None:
-        return ""
-    s = str(text)
-    if len(s) <= limit:
-        return s
-    cut = s.rfind(" ", 0, limit - 1)
-    if cut <= 0:
-        return s[: limit - 1].rstrip() + "…"
-    return s[:cut].rstrip(" ,;:") + "…"
 
 
 def _load_json(path):
