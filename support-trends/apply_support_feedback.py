@@ -15,7 +15,6 @@ continues so a partially-bad sub-agent output doesn't block the whole report):
   the agent's own count.
 """
 
-import json
 import os
 import re
 import sys
@@ -23,6 +22,7 @@ import sys
 import concurrency
 import _libpath  # noqa: F401
 from jira_client import atomic_write_json
+from json_io import load_json as _load_json
 
 
 CACHE_DIR = "/tmp/support_trends"
@@ -32,17 +32,6 @@ DATA_PATH = os.path.join(CACHE_DIR, "data.json")
 
 _VALID_CONFIDENCE = {"high", "medium", "low"}
 _KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+-\d+\Z", re.ASCII)
-
-
-def _load_json(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-    except (json.JSONDecodeError, OSError) as e:
-        print("WARNING: %s unreadable (%s)" % (path, e), file=sys.stderr)
-        return None
 
 
 def _valid_keys_set(data):

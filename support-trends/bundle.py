@@ -11,7 +11,6 @@ classes (charter drift, L2 containment, categorisation quality).
 Output: /tmp/support_trends/bundle.json
 """
 
-import json
 import os
 import re
 import sys
@@ -20,7 +19,9 @@ from datetime import datetime, timezone
 import concurrency
 import _libpath  # noqa: F401
 from jira_client import ensure_tmp_dir, atomic_write_json
-from ticket_record import ticket_record, untrusted
+from json_io import load_json as _load_json
+from prompt_safety import wrap_untrusted
+from ticket_record import ticket_record
 
 CACHE_DIR = "/tmp/support_trends"
 BUNDLE_PATH = os.path.join(CACHE_DIR, "bundle.json")
@@ -42,17 +43,6 @@ _VAULT_DIR_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-]{0,63}\Z", re.ASCII)
 # suggested_team from that list"). Anchor + ASCII-only to keep newlines /
 # null bytes / shell metachars out of the agent context.
 _CHARTER_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9 _\-]{0,63}\Z", re.ASCII)
-
-
-def _load_json(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-    except (json.JSONDecodeError, OSError) as e:
-        print("WARNING: %s exists but unreadable (%s)" % (path, e), file=sys.stderr)
-        return None
 
 
 def _resolve_vocab_hint_path(setup):
@@ -157,7 +147,7 @@ def _build_ticket_records(raw_tickets):
     for t in raw_tickets:
         rec = ticket_record(t)
         desc_full = (rec.get("description") or {}).get("text", "")
-        rec["description_snippet"] = untrusted(desc_full[:300])
+        rec["description_snippet"] = wrap_untrusted(desc_full[:300])
         records.append(rec)
     return records
 

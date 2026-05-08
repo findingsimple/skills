@@ -17,7 +17,6 @@ Validation rules — strict (the renderer renders this verbatim):
   report.py — this file just emits an empty list in that case).
 """
 
-import json
 import os
 import re
 import sys
@@ -25,14 +24,14 @@ import sys
 import concurrency
 import _libpath  # noqa: F401
 from jira_client import atomic_write_json
+from json_io import load_json as _load_json
+from prompt_safety import smart_truncate as _smart_truncate
 
 
 CACHE_DIR = "/tmp/support_trends"
 RESULTS_PATH = os.path.join(CACHE_DIR, "synthesise", "results.json")
 ANALYSIS_PATH = os.path.join(CACHE_DIR, "analysis.json")
 DATA_PATH = os.path.join(CACHE_DIR, "data.json")
-
-from text_utils import smart_truncate as _smart_truncate
 
 _VALID_CONFIDENCE = {"high", "medium", "low"}
 _VALID_AUDIENCE = {"exec", "support"}
@@ -43,17 +42,6 @@ MAX_CLAIM_CHARS = 140
 # chars of useful prose and the action clause often runs into a recommendation
 # tail. 320 covers the long tail without inviting paragraphs.
 MAX_SO_WHAT_CHARS = 320
-
-
-def _load_json(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-    except (json.JSONDecodeError, OSError) as e:
-        print("WARNING: %s unreadable (%s)" % (path, e), file=sys.stderr)
-        return None
 
 
 def _valid_keys(data):

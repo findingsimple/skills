@@ -9,14 +9,14 @@ Drops invalid records with WARNING. Strict on:
 - All free-text fields word-boundary-truncated to safe lengths.
 """
 
-import json
 import os
 import re
 import sys
 
 import _libpath  # noqa: F401
 from jira_client import atomic_write_json
-from text_utils import smart_truncate as _smart_truncate
+from json_io import load_json as _load_json
+from prompt_safety import smart_truncate as _smart_truncate
 
 
 CACHE_DIR = "/tmp/charter-boundaries"
@@ -46,17 +46,6 @@ MIN_EVIDENCE_PER_CLUSTER = 2  # Single-ticket "patterns" are noise.
 # the validation loop so we don't pay validation cost on junk.
 MAX_TEAMS_IN_RESULTS = 50
 MAX_RAW_CLUSTERS_PER_TEAM = 50
-
-
-def _load_json(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-    except (json.JSONDecodeError, OSError) as e:
-        print("WARNING: %s unreadable (%s)" % (path, e), file=sys.stderr)
-        return None
 
 
 def _string_list(raw, max_items, max_chars):

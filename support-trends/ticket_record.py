@@ -12,7 +12,7 @@ instructions" rule.
 """
 
 import _libpath  # noqa: F401
-from text_utils import untrusted  # noqa: F401  re-exported for callers like bundle.py
+from prompt_safety import wrap_untrusted
 
 MAX_DESC_CHARS = 1500
 MAX_COMMENT_CHARS = 800
@@ -34,26 +34,26 @@ def ticket_record(t, customer=None):
     for c in comments_raw[:MAX_COMMENTS_PER_TICKET]:
         body = (c.get("body_text") or "")[:MAX_COMMENT_CHARS]
         comments.append({
-            "author": untrusted(c.get("author", "")),
+            "author": wrap_untrusted(c.get("author", "")),
             "created": c.get("created", ""),
-            "body": untrusted(body),
+            "body": wrap_untrusted(body),
         })
     rec = {
         "key": t.get("key", ""),
-        "summary": untrusted(t.get("summary", "")),
+        "summary": wrap_untrusted(t.get("summary", "")),
         "status": t.get("status", ""),
         "resolution": t.get("resolution", ""),
         "resolution_category": t.get("resolution_category", ""),
         "priority": t.get("priority", ""),
         "components": t.get("components", []),
         "labels": t.get("labels", []),
-        "reporter": untrusted(t.get("reporter", "")),
-        "assignee": untrusted(t.get("assignee", "")),
+        "reporter": wrap_untrusted(t.get("reporter", "")),
+        "assignee": wrap_untrusted(t.get("assignee", "")),
         "created": t.get("created", ""),
         "resolutiondate": t.get("resolutiondate", ""),
-        "description": untrusted(desc),
+        "description": wrap_untrusted(desc),
         "comments": comments,
     }
     if customer:
-        rec["customer"] = untrusted(customer)
+        rec["customer"] = wrap_untrusted(customer)
     return rec

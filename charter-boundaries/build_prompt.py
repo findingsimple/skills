@@ -27,7 +27,7 @@ import sys
 import _libpath  # noqa: F401
 from charter_teams import slugify_team
 from jira_client import atomic_write_json
-from text_utils import smart_truncate as _truncate, untrusted as _untrusted
+from prompt_safety import smart_truncate as _smart_truncate, wrap_untrusted
 
 
 CACHE_DIR = "/tmp/charter-boundaries"
@@ -69,10 +69,10 @@ def _filter_misroutes(audit):
             continue
         out.append({
             "key": t.get("key", ""),
-            "summary": _untrusted(_truncate(t.get("summary", ""), MAX_SUMMARY_CHARS)),
+            "summary": wrap_untrusted(_smart_truncate(t.get("summary", ""), MAX_SUMMARY_CHARS)),
             "should_be_at": t.get("should_be_at", ""),
             "confidence": t.get("confidence", ""),
-            "reasoning": _untrusted(_truncate(t.get("reasoning", ""), MAX_REASONING_CHARS)),
+            "reasoning": wrap_untrusted(_smart_truncate(t.get("reasoning", ""), MAX_REASONING_CHARS)),
             "current_team": t.get("current_team", ""),
             "first_team": t.get("first_team", ""),
             "transitions": t.get("transition_count", 0),
@@ -110,13 +110,13 @@ def main():
                 "ticket_key": ex.get("ticket_key", ""),
                 "from_team": ex.get("from_team", ""),
                 "to_team": ex.get("to_team", ""),
-                "url": _untrusted(ex.get("url", "")),
-                "raw": _untrusted(_truncate(ex.get("raw", ""), MAX_EXAMPLE_RAW_CHARS)),
+                "url": wrap_untrusted(ex.get("url", "")),
+                "raw": wrap_untrusted(_smart_truncate(ex.get("raw", ""), MAX_EXAMPLE_RAW_CHARS)),
             })
         teams_records.append({
             "team": canonical,
             "vault_dir": ft["vault_dir"],
-            "charter_blurb": _untrusted(_truncate(team_inputs.get("charter_blurb", ""), MAX_BLURB_CHARS)),
+            "charter_blurb": wrap_untrusted(_smart_truncate(team_inputs.get("charter_blurb", ""), MAX_BLURB_CHARS)),
             "curated_examples": curated,
             "misroutes": misroutes,
             "audit_window": audit.get("period", {}),
