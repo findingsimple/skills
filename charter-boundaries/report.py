@@ -150,7 +150,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     lines.append("## Re-routings — one-off cases for learning")
     lines.append("")
     if individuals:
-        lines.append("> Tickets the audit flagged as `should_be_elsewhere` that didn't form a pattern with other tickets. Each is a learning example for L2 — *next time you see this kind of ticket, route it to <team>*. The `currently at` column shows whether the routing was already corrected.")
+        lines.append("> Tickets the audit flagged as `should_be_elsewhere` that didn't form a pattern with other tickets — each is a learning example for L2. Grouped by the team the ticket should have gone to. The ✅ / ⚠ marker per ticket shows whether the routing was already corrected.")
         lines.append("")
         # Group by should_be_at (the team the ticket should have gone to).
         by_target = {}
