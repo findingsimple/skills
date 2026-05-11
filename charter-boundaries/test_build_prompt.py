@@ -4,7 +4,11 @@
 import unittest
 
 import _libpath  # noqa: F401
-from build_prompt import _filter_misroutes, _filter_boundary_disputes
+from build_prompt import (
+    _filter_misroutes,
+    _filter_boundary_disputes,
+    _filter_individual_misroutes,
+)
 
 
 def _ticket(**overrides):
@@ -149,6 +153,47 @@ class FilterBoundaryDisputesTests(unittest.TestCase):
         self.assertEqual(out[0]["summary"]["_untrusted"], True)
         self.assertEqual(out[0]["reasoning"]["_untrusted"], True)
         self.assertEqual(out[0]["candidate_team"], "Asset")  # raw, validated
+
+
+class FilterIndividualMisroutesTests(unittest.TestCase):
+    """Pin the relaxed filter for the learning section.
+
+    Distinct from `_filter_misroutes`: no `out_of_charter_work` requirement
+    because even charter-aligned work that ultimately belongs elsewhere is
+    a valid learning example for L2."""
+
+    def test_keeps_should_be_elsewhere(self):
+        out = _filter_individual_misroutes({"tickets": [_ticket()]})
+        self.assertEqual(len(out), 1)
+
+    def test_keeps_when_out_of_charter_false(self):
+        # The key distinction from `_filter_misroutes` — pin it.
+        out = _filter_individual_misroutes(
+            {"tickets": [_ticket(out_of_charter_work=False)]})
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["out_of_charter_work"], False)
+
+    def test_drops_other_verdicts(self):
+        for v in ["belongs_at_focus", "split_charter", "insufficient_evidence"]:
+            out = _filter_individual_misroutes({"tickets": [_ticket(verdict=v)]})
+            self.assertEqual(out, [], "verdict=%r should be dropped" % v)
+
+    def test_drops_low_confidence(self):
+        out = _filter_individual_misroutes(
+            {"tickets": [_ticket(confidence="low")]})
+        self.assertEqual(out, [])
+
+    def test_keeps_high_and_medium_confidence(self):
+        for c in ["high", "medium"]:
+            out = _filter_individual_misroutes(
+                {"tickets": [_ticket(confidence=c)]})
+            self.assertEqual(len(out), 1, "confidence=%r should be kept" % c)
+
+    def test_carries_current_team_for_re_routed_check(self):
+        # The renderer needs current_team to show ✅ re-routed / ⚠ still here.
+        out = _filter_individual_misroutes(
+            {"tickets": [_ticket(current_team="Asset Management")]})
+        self.assertEqual(out[0]["current_team"], "Asset Management")
 
 
 if __name__ == "__main__":

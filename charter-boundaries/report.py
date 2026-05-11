@@ -60,6 +60,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     owns = team_record.get("owns_seed") or []
     rules = team_record.get("boundary_rules_seed") or []
     clusters = team_record.get("does_not_own_clusters") or []
+    individuals = team_record.get("individual_reroutings") or []
     should_own = team_record.get("should_own_examples") or []
     disputes = team_record.get("boundary_disputes") or []
     edge_cases = team_record.get("edge_cases_seed") or []
@@ -79,7 +80,7 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
     lines.append("")
     lines.append("# Charter Boundaries — %s (DRAFT)" % team)
     lines.append("")
-    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Should own (frequently mis-routed away)** comes from curated `examples.md` (inbound drift). **Does not own (common mistakes)** is populated from routing-audit evidence over the period above (outbound drift, clean misroutes). **Boundary disputes** lists `split_charter` cases — tickets to discuss with other teams. Review and edit each section in place.")
+    lines.append("> Auto-generated draft. **Owns** and **Boundary rules** are seeded from the existing charter blurb. **Should own (frequently mis-routed away)** comes from curated `examples.md` (inbound drift). **Does not own (common mistakes)** is populated from routing-audit clusters of misrouted tickets (outbound drift, patterns). **Re-routings (one-off cases)** lists individual misroutes for L2 learning — including ones that were already correctly re-routed. **Boundary disputes** lists `split_charter` cases for cross-team conversations. Review and edit each section in place.")
     lines.append("")
 
     # Owns
@@ -143,6 +144,39 @@ def _render_team(team_record, base_url, charters_source, examples_source, period
                 lines.append("")
     else:
         lines.append("_No misroute clusters for %s in this window. This means either no out-of-charter tickets landed here, or the audit window was too short to see patterns._" % team)
+        lines.append("")
+
+    # Individual re-routings — single-ticket misroutes (no pattern) for L2 learning
+    lines.append("## Re-routings — one-off cases for learning")
+    lines.append("")
+    if individuals:
+        lines.append("> Tickets the audit flagged as `should_be_elsewhere` that didn't form a pattern with other tickets. Each is a learning example for L2 — *next time you see this kind of ticket, route it to <team>*. The `currently at` column shows whether the routing was already corrected.")
+        lines.append("")
+        # Group by should_be_at (the team the ticket should have gone to).
+        by_target = {}
+        for it in individuals:
+            by_target.setdefault(it["should_be_at"], []).append(it)
+        for target in sorted(by_target, key=lambda c: -len(by_target[c])):
+            entries = by_target[target]
+            lines.append("### Should have gone to: %s (%d ticket%s)" % (
+                target, len(entries), "" if len(entries) == 1 else "s"))
+            lines.append("")
+            for it in entries:
+                link = _key_link(it["key"], base_url)
+                summary = it.get("summary", "")
+                reasoning = it.get("reasoning", "")
+                priority = it.get("priority", "")
+                priority_str = " *(%s)*" % priority if priority else ""
+                current = it.get("current_team", "")
+                if it.get("re_routed"):
+                    status_str = "✅ re-routed to **%s**" % current if current else "✅ re-routed"
+                else:
+                    status_str = "⚠ still at %s" % team
+                lines.append("- %s%s — *%s* — %s — %s" % (
+                    link, priority_str, summary, status_str, reasoning))
+            lines.append("")
+    else:
+        lines.append("_No one-off `should_be_elsewhere` cases in this window. (Either no tickets were re-routed away from %s, or all misroutes clustered into patterns above.)_" % team)
         lines.append("")
 
     # Boundary disputes — split_charter cases needing other-team input

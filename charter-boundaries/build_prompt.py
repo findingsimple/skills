@@ -82,6 +82,37 @@ def _filter_misroutes(audit):
     return out
 
 
+def _filter_individual_misroutes(audit):
+    """Keep all `should_be_elsewhere` tickets with at least medium confidence.
+
+    Distinct from `_filter_misroutes`: skips the `out_of_charter_work` check.
+    Single-ticket re-routings are surfaced individually for L2 learning even
+    when the focus team's work on them WAS within charter — the audit's
+    "this belongs elsewhere" call still teaches L2 something for next time.
+    Single tickets per-target don't cluster (clusters need 2+ evidence keys)
+    so this list is the renderer's only path to surface them."""
+    out = []
+    for t in audit.get("tickets", []):
+        if t.get("verdict") != "should_be_elsewhere":
+            continue
+        if t.get("confidence") not in ALLOWED_CONFIDENCES:
+            continue
+        out.append({
+            "key": t.get("key", ""),
+            "summary": wrap_untrusted(_smart_truncate(t.get("summary", ""), MAX_SUMMARY_CHARS)),
+            "should_be_at": t.get("should_be_at", ""),
+            "confidence": t.get("confidence", ""),
+            "reasoning": wrap_untrusted(_smart_truncate(t.get("reasoning", ""), MAX_REASONING_CHARS)),
+            "current_team": t.get("current_team", ""),
+            "first_team": t.get("first_team", ""),
+            "transitions": t.get("transition_count", 0),
+            "out_of_charter_work": bool(t.get("out_of_charter_work")),
+            "priority": t.get("priority", ""),
+            "status": t.get("status", ""),
+        })
+    return out
+
+
 def _filter_boundary_disputes(audit, focus_team):
     """Keep `split_charter` tickets where the audit identified an external
     candidate team — the user takes this list to other teams' standups for
@@ -133,6 +164,7 @@ def main():
             continue
         team_inputs = inputs["teams"].get(canonical, {"charter_blurb": "", "examples": []})
         misroutes = _filter_misroutes(audit)
+        individual_misroutes = _filter_individual_misroutes(audit)
         boundary_disputes = _filter_boundary_disputes(audit, canonical)
         curated = []
         for ex in team_inputs.get("examples", []):
@@ -149,6 +181,7 @@ def main():
             "charter_blurb": wrap_untrusted(_smart_truncate(team_inputs.get("charter_blurb", ""), MAX_BLURB_CHARS)),
             "curated_examples": curated,
             "misroutes": misroutes,
+            "individual_misroutes": individual_misroutes,
             "boundary_disputes": boundary_disputes,
             "audit_window": audit.get("period", {}),
             "audit_candidates_count": audit.get("candidates_count", 0),
@@ -171,10 +204,10 @@ def main():
 
     print("=== BUNDLE ===")
     for tr in teams_records:
-        print("  %-15s  charter=%4d chars  examples=%d  misroutes=%d  disputes=%d" % (
+        print("  %-15s  charter=%4d chars  examples=%d  misroutes=%d  individuals=%d  disputes=%d" % (
             tr["team"], len(tr["charter_blurb"]["text"]),
             len(tr["curated_examples"]), len(tr["misroutes"]),
-            len(tr["boundary_disputes"])))
+            len(tr["individual_misroutes"]), len(tr["boundary_disputes"])))
     print("\nBundle saved to %s" % BUNDLE_PATH)
 
 

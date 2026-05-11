@@ -7,6 +7,7 @@ import _libpath  # noqa: F401
 from apply import (
     _boundary_disputes_for,
     _curated_examples_for,
+    _individual_reroutings_for,
     _smart_truncate,
     _string_list,
     _validate_cluster,
@@ -217,6 +218,70 @@ class BoundaryDisputesForTests(unittest.TestCase):
         out = _boundary_disputes_for(tr, self.allowed, "ACE")
         self.assertTrue(out[0]["reasoning"].endswith("…"))
         self.assertLessEqual(len(out[0]["reasoning"]), 280)
+
+
+class IndividualReroutingsForTests(unittest.TestCase):
+    """Pin the apply-side handling of individual_reroutings: validates,
+    skips ones already in clusters, surfaces re_routed flag."""
+
+    def setUp(self):
+        self.allowed = {"ACE", "Asset", "Echo", "PAPI"}
+
+    def _bundle_individual(self, **overrides):
+        base = {
+            "key": "ECS-9001",
+            "should_be_at": "Echo",
+            "confidence": "high",
+            "summary": {"_untrusted": True, "text": "SMS opt-out failing"},
+            "reasoning": {"_untrusted": True, "text": "Resident SMS — Echo owns this."},
+            "current_team": "Echo",  # already re-routed
+            "priority": "Medium",
+            "status": "Closed",
+        }
+        base.update(overrides)
+        return base
+
+    def test_carries_valid_individual(self):
+        tr = {"individual_misroutes": [self._bundle_individual()]}
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", set())
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["key"], "ECS-9001")
+        self.assertEqual(out[0]["should_be_at"], "Echo")
+        self.assertTrue(out[0]["re_routed"])
+
+    def test_skips_keys_in_clusters(self):
+        tr = {"individual_misroutes": [self._bundle_individual()]}
+        # ECS-9001 is in a cluster already — should be skipped.
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", {"ECS-9001"})
+        self.assertEqual(out, [])
+
+    def test_re_routed_false_when_still_at_focus(self):
+        # current_team == focus → not yet re-routed.
+        tr = {"individual_misroutes": [
+            self._bundle_individual(current_team="ACE")]}
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", set())
+        self.assertEqual(len(out), 1)
+        self.assertFalse(out[0]["re_routed"])
+
+    def test_drops_unknown_target(self):
+        tr = {"individual_misroutes": [
+            self._bundle_individual(should_be_at="Bogus")]}
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", set())
+        self.assertEqual(out, [])
+
+    def test_drops_self_target(self):
+        # If should_be_at == focus_team (apply.py upstream blanks it for
+        # the clean misroutes path; this catches any leak).
+        tr = {"individual_misroutes": [
+            self._bundle_individual(should_be_at="ACE")]}
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", set())
+        self.assertEqual(out, [])
+
+    def test_drops_low_confidence(self):
+        tr = {"individual_misroutes": [
+            self._bundle_individual(confidence="low")]}
+        out = _individual_reroutings_for(tr, self.allowed, "ACE", set())
+        self.assertEqual(out, [])
 
 
 class ValidateEdgeCasesTests(unittest.TestCase):

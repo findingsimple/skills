@@ -14,14 +14,15 @@ allowed-tools: Bash Read Agent
 
 # Charter Boundaries
 
-Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with six sections:
+Builds a per-team **Charter Boundaries** Markdown draft into the Obsidian vault. Each draft is a routing decision aid (rather than a prose charter) with seven sections:
 
 1. **Owns** — concrete ownership items extracted from the existing charter blurb.
-2. **Should own (frequently mis-routed away)** — tickets that landed at another team but belong here, sourced from the user's curated `examples.md`. This is the *inbound* drift counterpart to "Does not own".
-3. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme. *Outbound* drift, clean misroutes only.
-4. **Boundary disputes** — `split_charter` cases from the audit grouped by candidate team. Tickets to discuss with another team's PM to resolve ownership; agreed calls feed the *Edge case registry* below.
-5. **Boundary rules** — if/then language already in the charter (most teams have none).
-6. **Edge case registry** — empty placeholder for the team to populate over time.
+2. **Should own (frequently mis-routed away)** — tickets that landed at another team but belong here, sourced from the user's curated `examples.md`. *Inbound* drift counterpart to "Does not own".
+3. **Does not own (common mistakes)** — clusters of misrouted tickets observed by the routing-audit pipeline, grouped by theme. *Outbound* drift, patterns only (≥2 evidence keys).
+4. **Re-routings (one-off cases)** — individual `should_be_elsewhere` misroutes that didn't form a cluster. Each is a learning example for L2 — including ones that were already correctly re-routed (✅) and ones that still need re-routing (⚠).
+5. **Boundary disputes** — `split_charter` cases from the audit grouped by candidate team. Tickets to discuss with another team's PM to resolve ownership; agreed calls feed the *Edge case registry* below.
+6. **Boundary rules** — if/then language already in the charter (most teams have none).
+7. **Edge case registry** — empty placeholder for the team to populate over time.
 
 Outputs go to `{OBSIDIAN_TEAMS_PATH}/{vault_dir}/Support/Charter Clarification/{end_year}/Charter Boundaries — {team} — {YYYY-MM-DD}.md` for every team that has a `SPRINT_TEAMS` slot.
 
@@ -174,6 +175,7 @@ Each per-team draft contains:
 - `## Owns` — bulleted list seeded from the charter blurb.
 - `## Should own (frequently mis-routed away)` — tickets from the user's curated `examples.md` where `to_team == this team`, grouped by `from_team`, rendered as Jira links. Empty for teams with no inbound-drift examples; an empty-state hint tells the user how to add new examples.
 - `## Does not own (common mistakes)` — one section per cluster, each with description, boundary rule, and `**Evidence:**` line linking to Jira tickets.
+- `## Re-routings — one-off cases for learning` — individual misroutes grouped by target team. Each bullet: link + priority + summary + ✅/⚠ status (re-routed vs still at focus team) + agent reasoning. Tickets in a cluster are skipped here to avoid duplication.
 - `## Boundary disputes` — `split_charter` cases from the audit, grouped by candidate team, one bullet per ticket: link + priority + summary + agent reasoning. The user takes this list to other teams' standups for ownership conversations.
 - `## Boundary rules` — bulleted list (often empty initially).
 - `## Edge case registry` — placeholder table for the team to fill in.
@@ -182,9 +184,10 @@ The team owner is expected to review and refine each section. The "Does not own"
 
 ### Drift directions captured
 
-The skill captures three classes of drift:
+The skill captures four classes of drift:
 
-- **Outbound (clean misroutes)** — tickets that landed at this team but belong elsewhere with high confidence. Sourced from the routing-audit pipeline. Lives in *Does not own (common mistakes)*.
+- **Outbound patterns** — tickets that landed at this team but belong elsewhere, when ≥2 tickets share a target team. Lives in *Does not own (common mistakes)*. Surfaced as themed clusters by the synthesis sub-agent.
+- **Outbound one-offs** — `should_be_elsewhere` tickets that didn't form a pattern with others. Each is a learning example for L2 (including ones already re-routed correctly). Lives in *Re-routings (one-off cases)*. Bypasses the synthesis agent — rendered straight from audit verdicts.
 - **Boundary disputes** — tickets the audit flagged as `split_charter` with at least medium confidence and a candidate team that isn't the focus. The work touches multiple charters; the agent identifies a likely owner but isn't confident enough to call it a misroute. Lives in *Boundary disputes*.
 - **Inbound** — tickets that landed at another team but belong here. Sourced from the user's hand-curated `examples.md`. Lives in *Should own (frequently mis-routed away)*.
 

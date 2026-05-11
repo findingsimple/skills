@@ -112,6 +112,50 @@ def _validate_cluster(rec, allowed_teams, valid_evidence, valid_curated, team):
     }
 
 
+def _individual_reroutings_for(team_record, allowed_teams, focus_team, clustered_keys):
+    """Carry the bundle's individual_misroutes through to draft.json — minus
+    any tickets that already appear in a `does_not_own_clusters` entry (those
+    surface as patterns, not anecdotes). What remains is the per-ticket
+    learning material: tickets where the audit said "this belongs elsewhere"
+    that didn't form a cluster with other misroutes.
+
+    Validation:
+    - ticket key matches _KEY_RE
+    - should_be_at is in allowed_teams (empty value means apply.py upstream
+      blanked it because it equaled focus_team — drop those, focus-self
+      misroutes aren't useful learning)
+    - confidence in {high, medium}
+    - free-text fields word-boundary-truncated, untrusted-unwrapped"""
+    out = []
+    for m in team_record.get("individual_misroutes") or []:
+        key = (m.get("key") or "").strip()
+        if not _KEY_RE.match(key):
+            continue
+        if key in clustered_keys:
+            continue  # Already rendered as part of a pattern cluster
+        candidate = (m.get("should_be_at") or "").strip()
+        if not candidate or candidate not in allowed_teams or candidate == focus_team:
+            continue
+        confidence = (m.get("confidence") or "").strip().lower()
+        if confidence not in {"high", "medium"}:
+            continue
+        summary_obj = m.get("summary") or {}
+        summary = summary_obj.get("text", "") if isinstance(summary_obj, dict) else str(summary_obj)
+        reasoning_obj = m.get("reasoning") or {}
+        reasoning = reasoning_obj.get("text", "") if isinstance(reasoning_obj, dict) else str(reasoning_obj)
+        out.append({
+            "key": key,
+            "summary": _smart_truncate(summary, 200),
+            "should_be_at": candidate,
+            "confidence": confidence,
+            "reasoning": _smart_truncate(reasoning, 280),
+            "current_team": str(m.get("current_team") or "")[:64],
+            "priority": str(m.get("priority") or "")[:32],
+            "re_routed": bool(m.get("current_team") and m.get("current_team") != focus_team),
+        })
+    return out
+
+
 def _boundary_disputes_for(team_record, allowed_teams, focus_team):
     """Carry split_charter cases from the bundle into draft.json so the
     renderer can show them as a list of tickets to discuss with other teams.
@@ -248,6 +292,7 @@ def main():
 
         edge_cases = _validate_edge_cases(rec.get("edge_cases_seed"))
 
+        clustered_keys = {k for c in clusters for k in c.get("evidence_keys", [])}
         teams_out.append({
             "team": team,
             "vault_dir": tr.get("vault_dir", ""),
@@ -255,6 +300,7 @@ def main():
             "owns_seed": owns_seed,
             "boundary_rules_seed": boundary_rules_seed,
             "does_not_own_clusters": clusters,
+            "individual_reroutings": _individual_reroutings_for(tr, allowed_teams, team, clustered_keys),
             "should_own_examples": _curated_examples_for(tr),
             "boundary_disputes": _boundary_disputes_for(tr, allowed_teams, team),
             "edge_cases_seed": edge_cases,
@@ -273,6 +319,7 @@ def main():
             "owns_seed": [],
             "boundary_rules_seed": [],
             "does_not_own_clusters": [],
+            "individual_reroutings": _individual_reroutings_for(tr, allowed_teams, tr["team"], set()),
             "should_own_examples": _curated_examples_for(tr),
             "boundary_disputes": _boundary_disputes_for(tr, allowed_teams, tr["team"]),
             "edge_cases_seed": [],
@@ -289,10 +336,11 @@ def main():
 
     print("=== DRAFT ===")
     for t in teams_out:
-        print("  %-15s  owns=%2d  should_own=%d  clusters=%d  disputes=%d  rules=%d  edge=%d" % (
+        print("  %-15s  owns=%2d  should_own=%d  clusters=%d  individuals=%d  disputes=%d  rules=%d  edge=%d" % (
             t["team"], len(t["owns_seed"]), len(t["should_own_examples"]),
-            len(t["does_not_own_clusters"]), len(t["boundary_disputes"]),
-            len(t["boundary_rules_seed"]), len(t["edge_cases_seed"])))
+            len(t["does_not_own_clusters"]), len(t["individual_reroutings"]),
+            len(t["boundary_disputes"]), len(t["boundary_rules_seed"]),
+            len(t["edge_cases_seed"])))
     print("\nDraft saved to %s" % DRAFT_PATH)
 
 
