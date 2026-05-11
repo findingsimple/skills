@@ -54,9 +54,11 @@ DATA_PATH = os.path.join(CACHE_DIR, "data.json")
 MAX_DESCRIPTION_CHARS = 1500
 MAX_COMMENT_CHARS = 800
 MAX_COMMENTS_STORED = 5
-# Cap on the per-label scan when looking up cf[10600] UUIDs — only the most
-# recent 25 tickets per label are inspected for a matching display value.
-MAX_UUID_LOOKUP_SCAN = 25
+# Cap on the per-label scan when looking up cf[10600] UUIDs — the most recent
+# N tickets per label are inspected for a matching display value. Set high
+# enough that rarely-routed-to teams (e.g. Platform, Asset Management) still
+# appear in the scan window for the neighborhood resolver.
+MAX_UUID_LOOKUP_SCAN = 200
 
 _PROJECT_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]+\Z", re.ASCII)
 _LABEL_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_\-.]{0,63}\Z", re.ASCII)
@@ -130,6 +132,48 @@ def resolve_team_uuids(base_url, auth, project_key, focus_team_field_values, foc
             uuids.append(found)
         else:
             print("WARNING: Could not resolve cf[10600] UUID for focus value %r" % value, file=sys.stderr)
+    return uuids
+
+
+def resolve_team_uuids_batch(base_url, auth, project_key, names):
+    """One scan, multi-name match. Used by the neighborhood resolver where
+    we need UUIDs for several teams and a single MAX_UUID_LOOKUP_SCAN-bounded
+    scan is much cheaper than N separate scans (one per name).
+
+    Returns UUIDs in the same order as `names`; emits a WARNING for any name
+    that didn't appear in the scan window."""
+    if not names:
+        return []
+    jql = 'project = %s AND cf[10600] is not EMPTY ORDER BY created DESC' % project_key
+    try:
+        # Bound the fetch — `jira_search_all` without a limit paginates every
+        # ticket with cf[10600] ever set (thousands on a busy project, takes
+        # minutes). MAX_UUID_LOOKUP_SCAN covers all neighborhood names on
+        # well-trodden teams; rare teams still produce a WARNING below.
+        lookup = jira_search_all(base_url, auth, jql, "customfield_10600",
+                                 limit=MAX_UUID_LOOKUP_SCAN)
+    except Exception as e:
+        print("WARNING: batch UUID lookup search failed: %s" % e, file=sys.stderr)
+        return []
+    # Build name → uuid map from the first MAX_UUID_LOOKUP_SCAN tickets.
+    by_upper = {}
+    for item in lookup[:MAX_UUID_LOOKUP_SCAN]:
+        team_obj = (item.get("fields") or {}).get("customfield_10600")
+        if not isinstance(team_obj, dict):
+            continue
+        n = team_obj.get("name", "")
+        uuid = team_obj.get("id", "")
+        if n and uuid and n.upper() not in by_upper:
+            by_upper[n.upper()] = uuid
+    uuids = []
+    for name in names:
+        uuid = by_upper.get(name.upper())
+        if uuid and _UUID_RE.match(uuid):
+            uuids.append(uuid)
+        else:
+            print("WARNING: Could not resolve cf[10600] UUID for neighborhood value %r "
+                  "(scanned %d tickets; team may be rare or named differently in Jira)" % (
+                      name, min(len(lookup), MAX_UUID_LOOKUP_SCAN)), file=sys.stderr)
     return uuids
 
 
@@ -263,7 +307,29 @@ def main():
     if focus_uuids:
         print("  Resolved UUIDs: %s" % focus_uuids, file=sys.stderr)
 
-    focus_clause = build_focus_clause(focus_labels, focus_uuids)
+    # Neighborhood widens the cf[10600] net to catch tickets warm-handed-off
+    # OUT of the focus team (Jira's Team field type doesn't support `was`).
+    # Stage 2 still filters by focus-team-in-history, so the broader Stage 1
+    # set doesn't flood the audit.
+    neighborhood_field_values = setup.get("neighborhood_team_field_values") or []
+    neighborhood_field_values = _filter_match(_TEAM_NAME_RE, neighborhood_field_values,
+                                              "neighborhood_team_field_values")
+    neighborhood_uuids = []
+    if neighborhood_field_values:
+        print("[fetch] Resolving neighborhood cf[10600] UUIDs: %s" % neighborhood_field_values,
+              file=sys.stderr)
+        # Single scan, batch-match — one Jira query against the most recent
+        # MAX_UUID_LOOKUP_SCAN tickets with cf[10600] set, then pick out all
+        # listed neighborhood names from the result. Avoids N separate scans
+        # (one per name) that the per-value resolver above does.
+        neighborhood_uuids = resolve_team_uuids_batch(
+            base_url, auth, project_key, neighborhood_field_values)
+        if neighborhood_uuids:
+            print("  Resolved UUIDs: %s" % neighborhood_uuids, file=sys.stderr)
+
+    # Combine for Stage 1; Stage 2 below still uses focus_uuids only.
+    stage1_uuids = focus_uuids + [u for u in neighborhood_uuids if u not in focus_uuids]
+    focus_clause = build_focus_clause(focus_labels, stage1_uuids)
 
     fields = "summary,status,priority,assignee,reporter,components,created,updated,resolutiondate,resolution,labels,customfield_10600,description,issuetype"
 

@@ -166,6 +166,34 @@ def main():
               "your support env vars." % focus_team, file=sys.stderr)
         sys.exit(1)
 
+    # AUDIT_NEIGHBORHOOD_TEAMS widens Stage 1's cf[10600] net to include the
+    # listed teams' UUIDs alongside the focus team's. This catches tickets
+    # that were warm-handed-off OUT of the focus team into one of the
+    # neighbouring teams — without it, those tickets fall out of the net
+    # entirely (the Team field type doesn't support JQL `was`/`CHANGED`).
+    # Stage 2's changelog filter still keeps only tickets with focus team
+    # in history, so the broader Stage 1 set doesn't flood the audit.
+    #
+    # Values are JIRA-SIDE TEAM DISPLAY NAMES (what appears in cf[10600]),
+    # NOT CHARTER_TEAMS canonicals. These can diverge — e.g. CHARTER_TEAMS
+    # canonical "Asset" might be "Asset Management" in Jira, "PAPI" might
+    # split into "Platform" + "API". The fetch.py resolver does
+    # case-insensitive matching, so "Echo" matches "ECHO" without help.
+    # Unresolvable names produce a WARNING from the resolver, not an error.
+    neighborhood_env = os.environ.get("AUDIT_NEIGHBORHOOD_TEAMS", "").strip()
+    neighborhood_team_field_values = []
+    if neighborhood_env:
+        seen_focus = {v.strip().lower() for v in field_value.split(",") if v.strip()}
+        for raw in neighborhood_env.split(","):
+            name = raw.strip()
+            if not name:
+                continue
+            _require_match(_TEAM_NAME_RE, name, "AUDIT_NEIGHBORHOOD_TEAMS entry")
+            # Skip if it duplicates a focus-team display value (already covered).
+            if name.lower() in seen_focus:
+                continue
+            neighborhood_team_field_values.append(name)
+
     charters_path, charters_source = _resolve_charters_path()
     if not charters_path:
         print("ERROR: No charters file found.", file=sys.stderr)
@@ -181,6 +209,9 @@ def main():
     print("FOCUS TEAM: %s  (slot %d of %d in SPRINT_TEAMS, label=%r, team_field=%r)" % (
         focus_team, slot_index, total_slots, label or "(none)", field_value or "(none)"))
     print("  ↑ verify the slot above matches the team you intended to audit")
+    if neighborhood_team_field_values:
+        print("NEIGHBORHOOD: %s  (Stage 1 cf[10600] net widened to catch warm hand-offs)" % (
+            ", ".join(neighborhood_team_field_values)))
     print("PERIOD: %s → %s" % (start, end))
     print("CHARTERS: %s (%s)" % (charters_path, charters_source))
     print()
@@ -196,6 +227,7 @@ def main():
         "vault_dir": vault_dir or "",
         "focus_label": label,
         "focus_team_field_value": field_value,
+        "neighborhood_team_field_values": neighborhood_team_field_values,
         "allowed_teams": allowed_teams,
         "team_alias_map": alias_map,
         "period": {"start": start, "end": end},

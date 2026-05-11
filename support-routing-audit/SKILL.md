@@ -42,6 +42,7 @@ Reuses existing variables — no new env vars needed.
 | `SUPPORT_TEAM_FIELD_VALUES` | One of these is required | Pipe-delimited per-team values for the Team custom field `cf[10600]`; same comma-OR semantics |
 | `OBSIDIAN_TEAMS_PATH` | No | Used to locate `.charters.md` if not supplied via `CHARTERS_PATH` |
 | `CHARTERS_PATH` | No | Override path to charters markdown; must resolve under `OBSIDIAN_TEAMS_PATH` or this skill directory (symlink-checked) |
+| `AUDIT_NEIGHBORHOOD_TEAMS` | No | Comma-separated **Jira-side** cf[10600] team display names to widen Stage 1's net (e.g. `COPS,Platform,API,Echo,Asset Management`). Catches tickets warm-handed-off OUT of the focus team into one of these neighbouring teams. Without it, the audit misses handoffs entirely because Atlassian's Team field type doesn't support JQL `was`/`CHANGED`. Stage 2's changelog filter still keeps only tickets with focus team in history, so the broader Stage 1 set doesn't flood the audit. Pass Jira display names (not CHARTER_TEAMS canonicals) — these can diverge (e.g. canonical "Asset" might be "Asset Management" in Jira). Names matched case-insensitively. Unresolvable names produce a WARNING and are dropped from the JQL. |
 
 If neither support-team filter is set, the skill aborts — without one we can't find tickets routed to the focus team. If `CHARTER_TEAMS` is unset, the skill aborts with the format hint shown above.
 

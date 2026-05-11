@@ -274,6 +274,7 @@ All environment variables are exported in `~/.zshrc`. Python scripts access them
 | `SUPPORT_TEAM_FIELD_VALUES` | sprint-pulse, support-routing-audit, support-trends, charter-boundaries |
 | `CHARTER_TEAMS` | support-routing-audit, support-trends, charter-boundaries (pipe-delimited canonical team names, optional comma-separated aliases per slot) |
 | `CHARTERS_PATH` | support-routing-audit, charter-boundaries (optional override; must resolve under `OBSIDIAN_TEAMS_PATH` or the skill dir) |
+| `AUDIT_NEIGHBORHOOD_TEAMS` | support-routing-audit, charter-boundaries (optional; comma-separated Jira-side cf[10600] team display names — widens Stage 1's JQL net to catch warm hand-offs out of the focus team. Pass Jira display names, not CHARTER_TEAMS canonicals; case-insensitive) |
 | `RETRO_PARENT_PAGE_ID` | incident-kb |
 | `RETRO_TEMPLATE_PAGE_ID` | incident-kb |
 | `INC_PROJECT_KEY` | incident-kb |
